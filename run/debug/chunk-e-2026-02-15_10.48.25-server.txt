@@ -1,0 +1,158 @@
+---- Minecraft Chunk IO Error Report ----
+// Ideally, this shouldn't be here
+
+Time: 2026-02-15 10:48:25
+Description: Chunk save failure
+
+java.io.IOException: Operation timed out
+	at java.base/sun.nio.ch.UnixFileDispatcherImpl.pwrite0(Native Method)
+	at java.base/sun.nio.ch.UnixFileDispatcherImpl.pwrite(UnixFileDispatcherImpl.java:71)
+	at java.base/sun.nio.ch.IOUtil.writeFromNativeBuffer(IOUtil.java:135)
+	at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:102)
+	at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:72)
+	at java.base/sun.nio.ch.FileChannelImpl.writeInternal(FileChannelImpl.java:1300)
+	at java.base/sun.nio.ch.FileChannelImpl.implWrite(FileChannelImpl.java:1268)
+	at java.base/sun.nio.ch.FileChannelImpl.write(FileChannelImpl.java:1250)
+	at knot//net.minecraft.world.storage.RegionFile.writeChunk(RegionFile.java:420)
+	at knot//net.minecraft.world.storage.RegionFile$ChunkBuffer.close(RegionFile.java:393)
+	at java.base/java.util.zip.DeflaterOutputStream.close(DeflaterOutputStream.java:258)
+	at java.base/java.io.FilterOutputStream.close(FilterOutputStream.java:190)
+	at java.base/java.io.FilterOutputStream.close(FilterOutputStream.java:190)
+	at knot//net.minecraft.world.storage.RegionBasedStorage.write(RegionBasedStorage.java:82)
+	at knot//net.minecraft.world.storage.StorageIoWorker.write(StorageIoWorker.java:280)
+	at knot//net.minecraft.world.storage.StorageIoWorker.writeResult(StorageIoWorker.java:270)
+	at knot//net.minecraft.util.thread.TaskQueue$PrioritizedTask.run(TaskQueue.java:50)
+	at knot//net.minecraft.util.Util.runInNamedZone(Util.java:297)
+	at knot//net.minecraft.util.thread.ConsecutiveExecutor.runOnce(ConsecutiveExecutor.java:50)
+	at knot//net.minecraft.util.thread.ConsecutiveExecutor.run(ConsecutiveExecutor.java:62)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1095)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:619)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: IO-Worker-32
+Stacktrace:
+	at java.base/sun.nio.ch.UnixFileDispatcherImpl.pwrite0(Native Method)
+	at java.base/sun.nio.ch.UnixFileDispatcherImpl.pwrite(UnixFileDispatcherImpl.java:71)
+	at java.base/sun.nio.ch.IOUtil.writeFromNativeBuffer(IOUtil.java:135)
+	at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:102)
+	at java.base/sun.nio.ch.IOUtil.write(IOUtil.java:72)
+	at java.base/sun.nio.ch.FileChannelImpl.writeInternal(FileChannelImpl.java:1300)
+	at java.base/sun.nio.ch.FileChannelImpl.implWrite(FileChannelImpl.java:1268)
+	at java.base/sun.nio.ch.FileChannelImpl.write(FileChannelImpl.java:1250)
+	at knot//net.minecraft.world.storage.RegionFile.writeChunk(RegionFile.java:420)
+	at knot//net.minecraft.world.storage.RegionFile$ChunkBuffer.close(RegionFile.java:393)
+	at java.base/java.util.zip.DeflaterOutputStream.close(DeflaterOutputStream.java:258)
+	at java.base/java.io.FilterOutputStream.close(FilterOutputStream.java:190)
+	at java.base/java.io.FilterOutputStream.close(FilterOutputStream.java:190)
+	at knot//net.minecraft.world.storage.RegionBasedStorage.write(RegionBasedStorage.java:82)
+	at knot//net.minecraft.world.storage.StorageIoWorker.write(StorageIoWorker.java:280)
+	at knot//net.minecraft.world.storage.StorageIoWorker.writeResult(StorageIoWorker.java:270)
+	at knot//net.minecraft.util.thread.TaskQueue$PrioritizedTask.run(TaskQueue.java:50)
+	at knot//net.minecraft.util.Util.runInNamedZone(Util.java:297)
+	at knot//net.minecraft.util.thread.ConsecutiveExecutor.runOnce(ConsecutiveExecutor.java:50)
+
+-- Chunk Info --
+Details:
+	Level: e
+	Dimension: minecraft:overworld
+	Storage: chunk
+	Position: [6, 27]
+Stacktrace:
+	at knot//net.minecraft.server.MinecraftServer.method_61088(MinecraftServer.java:2183)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1095)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:619)
+	at java.base/java.lang.Thread.run(Thread.java:1447)
+
+-- System Details --
+Details:
+	Minecraft Version: 1.21.11
+	Minecraft Version ID: 1.21.11
+	Operating System: Mac OS X (aarch64) version 26.2
+	Java Version: 24, Oracle Corporation
+	Java VM Version: Java HotSpot(TM) 64-Bit Server VM (mixed mode, sharing), Oracle Corporation
+	Memory: 122756728 bytes (117 MiB) / 754974720 bytes (720 MiB) up to 4294967296 bytes (4096 MiB)
+	CPUs: 10
+	Processor Vendor: Apple Inc.
+	Processor Name: Apple M2 Pro
+	Identifier: Apple Inc. Family 0xda33d83d Model 0 Stepping 0
+	Microarchitecture: ARM64 SoC: Avalanche + Blizzard
+	Frequency (GHz): 3.50
+	Number of physical packages: 1
+	Number of physical CPUs: 10
+	Number of logical CPUs: 10
+	Graphics card #0 name: Apple M2 Pro
+	Graphics card #0 vendor: Apple (0x106b)
+	Graphics card #0 VRAM (MiB): 0.00
+	Graphics card #0 deviceId: unknown
+	Graphics card #0 versionInfo: unknown
+	Memory slot #0 capacity (MiB): 0.00
+	Memory slot #0 clockSpeed (GHz): 0.00
+	Memory slot #0 type: unknown
+	Virtual memory max (MiB): 33792.00
+	Virtual memory used (MiB): 30214.72
+	Swap memory total (MiB): 17408.00
+	Swap memory used (MiB): 16461.19
+	Space in storage for jna.tmpdir (MiB): <path not set>
+	Space in storage for org.lwjgl.system.SharedLibraryExtractPath (MiB): <path not set>
+	Space in storage for io.netty.native.workdir (MiB): <path not set>
+	Space in storage for java.io.tmpdir (MiB): available: 10156.75, total: 471482.09
+	Space in storage for workdir (MiB): available: 10156.75, total: 471482.09
+	JVM Flags: 0 total; 
+	Debug Flags: 0 total; 
+	Fabric Mods: 
+		chestsort: ChestSort 1.0-SNAPSHOT
+		fabric-api: Fabric API 0.141.3+1.21.11
+		fabric-api-base: Fabric API Base 1.0.5+4ebb5c083e
+		fabric-api-lookup-api-v1: Fabric API Lookup API (v1) 1.6.114+20dc27073e
+		fabric-biome-api-v1: Fabric Biome API (v1) 17.1.1+4fc5413f3e
+		fabric-block-api-v1: Fabric Block API (v1) 1.1.10+4ebb5c083e
+		fabric-block-view-api-v2: Fabric BlockView API (v2) 1.0.39+4ebb5c083e
+		fabric-client-gametest-api-v1: Fabric Client Game Test API (v1) 4.3.5+bfe9fcf43e
+		fabric-command-api-v2: Fabric Command API (v2) 2.4.7+6b42a6003e
+		fabric-content-registries-v0: Fabric Content Registries (v0) 10.2.14+4fc5413f3e
+		fabric-convention-tags-v1: Fabric Convention Tags 2.1.55+7f945d5b3e
+		fabric-convention-tags-v2: Fabric Convention Tags (v2) 2.17.3+8ef948ba3e
+		fabric-crash-report-info-v1: Fabric Crash Report Info (v1) 0.3.23+4ebb5c083e
+		fabric-data-attachment-api-v1: Fabric Data Attachment API (v1) 1.8.47+eed0806f3e
+		fabric-data-generation-api-v1: Fabric Data Generation API (v1) 23.4.0+69974c4e3e
+		fabric-dimensions-v1: Fabric Dimensions API (v1) 4.0.28+4fc5413f3e
+		fabric-entity-events-v1: Fabric Entity Events (v1) 3.1.1+1d0ab4303e
+		fabric-events-interaction-v0: Fabric Events Interaction (v0) 4.1.0+3b89ecf63e
+		fabric-game-rule-api-v1: Fabric Game Rule API (v1) 2.0.3+4fc5413f3e
+		fabric-gametest-api-v1: Fabric Game Test API (v1) 3.1.27+4fc5413f3e
+		fabric-item-api-v1: Fabric Item API (v1) 11.5.20+d0c46b9e3e
+		fabric-item-group-api-v1: Fabric Item Group API (v1) 4.2.36+4fc5413f3e
+		fabric-key-binding-api-v1: Fabric Key Binding API (v1) 1.1.7+4fc5413f3e
+		fabric-lifecycle-events-v1: Fabric Lifecycle Events (v1) 2.6.15+4ebb5c083e
+		fabric-loot-api-v2: Fabric Loot API (v2) 3.0.73+3f89f5a53e
+		fabric-loot-api-v3: Fabric Loot API (v3) 2.0.20+78c8b4663e
+		fabric-message-api-v1: Fabric Message API (v1) 6.1.12+4ebb5c083e
+		fabric-model-loading-api-v1: Fabric Model Loading API (v1) 6.0.15+4fc5413f3e
+		fabric-networking-api-v1: Fabric Networking API (v1) 5.1.5+ae1e07683e
+		fabric-object-builder-api-v1: Fabric Object Builder API (v1) 21.1.39+4fc5413f3e
+		fabric-particles-v1: Fabric Particles (v1) 4.2.11+4fc5413f3e
+		fabric-recipe-api-v1: Fabric Recipe API (v1) 8.2.3+4ebb5c083e
+		fabric-registry-sync-v0: Fabric Registry Sync (v0) 6.2.5+1718722b3e
+		fabric-renderer-api-v1: Fabric Renderer API (v1) 8.0.3+f4ffd2e53e
+		fabric-renderer-indigo: Fabric Renderer - Indigo 5.0.3+f4ffd2e53e
+		fabric-rendering-fluids-v1: Fabric Rendering Fluids (v1) 3.1.43+4ebb5c083e
+		fabric-rendering-v1: Fabric Rendering (v1) 16.2.10+0290ad933e
+		fabric-resource-conditions-api-v1: Fabric Resource Conditions API (v1) 5.0.35+4fc5413f3e
+		fabric-resource-loader-v0: Fabric Resource Loader (v0) 3.3.4+4fc5413f3e
+		fabric-resource-loader-v1: Fabric Resource Loader (v1) 1.0.10+78c8b4663e
+		fabric-screen-api-v1: Fabric Screen API (v1) 3.1.7+4ebb5c083e
+		fabric-screen-handler-api-v1: Fabric Screen Handler API (v1) 1.3.161+4fc5413f3e
+		fabric-serialization-api-v1: Fabric Serialization API (v1) 1.0.5+4ebb5c083e
+		fabric-sound-api-v1: Fabric Sound API (v1) 1.0.51+4fc5413f3e
+		fabric-tag-api-v1: Fabric Tag API (v1) 1.2.20+4fc5413f3e
+		fabric-transfer-api-v1: Fabric Transfer API (v1) 6.0.25+4fc5413f3e
+		fabric-transitive-access-wideners-v1: Fabric Transitive Access Wideners (v1) 7.1.0+014c8cec3e
+		fabricloader: Fabric Loader 0.18.4
+		java: Java HotSpot(TM) 64-Bit Server VM 24
+		minecraft: Minecraft 1.21.11
+		mixinextras: MixinExtras 0.5.0

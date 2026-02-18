@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "chestsort",
+  "version": "${version}",
+  "name": "ChestSort",
+  "description": "",
+  "authors": [],
+  "contact": {},
+  "license": "All-Rights-Reserved",
+  "icon": "assets/chestsort/icon.png",
+  "environment": "*",
+  "entrypoints": {
+    "fabric-datagen": [
+      "dev.dromer.chestsort.client.ChestsortDataGenerator"
+    ],
+    "client": [
+      "dev.dromer.chestsort.client.ChestsortClient"
+    ],
+    "main": [
+      "dev.dromer.chestsort.Chestsort"
+    ]
+  },
+  "mixins": [
+    "chestsort.mixins.json",
+    {
+      "config": "chestsort.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "fabric-api": "*",
+    "minecraft": "${minecraft_version}"
+  }
+}
