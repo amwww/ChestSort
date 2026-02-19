@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/ChestSort.client.iml" filepath="$PROJECT_DIR$/.idea/modules/ChestSort.client.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/ChestSort.main.iml" filepath="$PROJECT_DIR$/.idea/modules/ChestSort.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/ChestSort.test.iml" filepath="$PROJECT_DIR$/.idea/modules/ChestSort.test.iml" />
+    </modules>
+  </component>
+</project>

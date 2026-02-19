@@ -424,3 +424,6 @@ net.minecraft.client.realms.exception.RealmsServiceException: Realms authenticat
 [14:19:12] [Server thread/INFO] (Minecraft) Saving chunks for level 'ServerLevel[e]'/minecraft:overworld
 [14:19:12] [Server thread/INFO] (Minecraft) Saving chunks for level 'ServerLevel[e]'/minecraft:the_end
 [14:19:12] [Server thread/INFO] (Minecraft) Saving chunks for level 'ServerLevel[e]'/minecraft:the_nether
+[14:43:32] [Render thread/INFO] (Minecraft) Stopping!
+[14:43:32] [Server thread/INFO] (Minecraft) Player96 lost connection: Disconnected
+[14:43:32] [Server thread/INFO] (Minecraft) Player96 left the game

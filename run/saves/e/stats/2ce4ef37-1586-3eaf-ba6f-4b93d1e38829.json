@@ -4,18 +4,19 @@
       "minecraft:dirt": 1
     },
     "minecraft:custom": {
-      "minecraft:sprint_one_cm": 9468,
-      "minecraft:open_chest": 44,
-      "minecraft:time_since_rest": 70203,
+      "minecraft:time_since_rest": 71133,
+      "minecraft:walk_one_cm": 14032,
+      "minecraft:leave_game": 1,
+      "minecraft:play_time": 71133,
+      "minecraft:jump": 150,
+      "minecraft:time_since_death": 71133,
+      "minecraft:sprint_one_cm": 10096,
+      "minecraft:open_chest": 45,
       "minecraft:fall_one_cm": 213,
-      "minecraft:walk_one_cm": 13464,
-      "minecraft:total_world_time": 120014,
-      "minecraft:fly_one_cm": 38922,
+      "minecraft:total_world_time": 175790,
+      "minecraft:fly_one_cm": 56062,
       "minecraft:crouch_one_cm": 275,
-      "minecraft:sneak_time": 87,
-      "minecraft:play_time": 70203,
-      "minecraft:jump": 136,
-      "minecraft:time_since_death": 70203
+      "minecraft:sneak_time": 87
     },
     "minecraft:mined": {
       "minecraft:grass_block": 1
