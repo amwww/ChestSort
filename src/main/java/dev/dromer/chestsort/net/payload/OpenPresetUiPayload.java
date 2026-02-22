@@ -14,6 +14,10 @@ public record OpenPresetUiPayload(byte mode, String name) implements CustomPaylo
     public static final byte MODE_IMPORT = 1;
     /** Open the preset-export popup (copy export code). */
     public static final byte MODE_EXPORT = 2;
+    /** Open the preset-export-all screen (exports all presets as a presetList). */
+    public static final byte MODE_EXPORT_ALL = 3;
+    /** Open the preset-export-select screen (choose presets to export as a presetList). */
+    public static final byte MODE_EXPORT_SELECT = 4;
 
     public static final Id<OpenPresetUiPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "open_preset_ui"));
 

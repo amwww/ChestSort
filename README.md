@@ -31,15 +31,17 @@ You can set up filter rules on each container to specify what items belong there
 - **Auto refresh on open**
   - Whenever you open a chest/barrel, that container’s stored snapshot is automatically refreshed.
 
-- **Per-container filter rules (items + tags + presets)**
-  - Each chest/barrel can have filter rules based on:
+- **Per-container filter rules (whitelist + blacklist)**
+  - Each chest/barrel can have **whitelist + blacklist** rules based on:
     - explicit item ids (e.g. `minecraft:cobblestone`)
     - item tags (e.g. `#minecraft:logs`) with per-tag exceptions
     - applied presets (reusable saved rule sets)
+  - If an item matches both whitelist and blacklist, you can choose which side wins via a per-container **priority** toggle.
 
 - **One-click Sort**
   - When a container has any rules, a **Sort** button appears.
   - Clicking **Sort** moves matching items from your inventory into the open container.
+  - Items matching the blacklist are not moved (unless whitelist is set to win conflicts).
 
 - **Sort feedback + Undo**
   - After Sort/Autosort/Organize, a left-side notification shows what moved/changed.
@@ -53,7 +55,8 @@ You can set up filter rules on each container to specify what items belong there
 
 - **Preset editor + import/export**
   - Edit presets in a dedicated UI.
-  - Import/export presets as shareable `cs2:` strings.
+  - Presets support **Whitelist/Blacklist** tabs (same as containers).
+  - Import/export presets as shareable `cs2|` strings (includes blacklist data).
 
 - **Wand (region bulk edit)**
   - Bind any item as a wand and select a region:
@@ -87,10 +90,15 @@ All commands are under `/cs`.
 - `/cs tags <item>`
   - Prints the tags for a given item (useful for building tag filters).
 
+- `/cs blacklist ...`
+  - Prevents blacklisted items from being moved by Sort/Autosort.
+  - `add <item>` / `remove <item>` / `list` / `clear`
+  - `addPreset <name> <blacklist|whitelist|everything>` (adds items from a preset’s blacklist, whitelist, or both)
+
 - `/cs presets ...`
   - Manage presets:
-    - `add <name>` / `remove <name>` / `rename <old> <new>` / `edit <name>`
-    - `import` / `export <name>`
+    - `add <name>` / `remove <name>` / `rename <old> <new>` / `edit <name>` / `list`
+    - `import` / `export <name>` / `exportAll` / `exportSelect`
 
 - `/cs wand ...`
   - Region selection + bulk operations (loaded chunks only):
@@ -111,22 +119,25 @@ All commands are under `/cs`.
   - Filter Items
   - Filter Tags (with exceptions)
   - Filter Presets
-4. Use the right panel search:
+4. Use the left header tabs to switch between **Whitelist** and **Blacklist**.
+5. If you use both tabs, set the conflict **priority** (which side wins when an item matches both).
+6. Use the right panel search:
   - type text to search for items
   - type `#something` to search tags
   - type `&name` to search presets
-5. Click the green **+** to add rules, red **x** to remove.
-6. If the filter rules are non-empty, click **Sort** to move matching items from your inventory into the container.
+7. Click the green **+** to add rules, red **x** to remove.
+8. If the filter rules are non-empty, click **Sort** to move matching items from your inventory into the container.
 
 Organize:
 - Click **Organize** to pack and group the open container.
 
 Undo:
-- After Sort/Autosort/Organize, use the **Undo** button in the notification to revert.
+- After Sort/Autosort/Organize, use the **Undo** button to revert.
 
 Autosort:
 - The filter UI includes an **Autosort** toggle for the current container.
 - Autosort behavior depends on your `/cs autosort` mode.
+- When autosort triggers, it automatically moves matching items from your inventory into the container whenever you open it.
 
 Notes:
 - The filter is stored per container position + dimension.

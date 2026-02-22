@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.mojang.serialization.Codec;
+import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
@@ -39,12 +40,42 @@ public class ChestSortState extends PersistentState {
     public static final String HIGHLIGHTS_OFF = "off";
     public static final String HIGHLIGHTS_UNTIL_OPENED = "until_opened";
 
+    private record ContainerBlacklistBundle(
+        Map<String, ContainerFilterSpec> blacklistSpecs,
+        Map<String, Boolean> whitelistPriorityByContainer
+    ) {
+        static final MapCodec<ContainerBlacklistBundle> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+            Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC)
+                .optionalFieldOf("blacklistSpecs", Map.of())
+                .forGetter(ContainerBlacklistBundle::blacklistSpecs),
+            Codec.unboundedMap(Codec.STRING, Codec.BOOL)
+                .optionalFieldOf("whitelistPriorityByContainer", Map.of())
+                .forGetter(ContainerBlacklistBundle::whitelistPriorityByContainer)
+        ).apply(instance, ContainerBlacklistBundle::new));
+    }
+
+    private record PresetBundle(
+        Map<String, ContainerFilterSpec> presets,
+        Map<String, ContainerFilterSpec> presetBlacklists
+    ) {
+        static final MapCodec<PresetBundle> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+            Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC)
+                .optionalFieldOf("presets", Map.of())
+                .forGetter(PresetBundle::presets),
+            Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC)
+                .optionalFieldOf("presetBlacklist", Map.of())
+                .forGetter(PresetBundle::presetBlacklists)
+        ).apply(instance, PresetBundle::new));
+    }
+
     public static final Codec<ChestSortState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.LONG.optionalFieldOf("lastFullScanMs", 0L).forGetter(s -> s.lastFullScanMs),
         ContainerSnapshot.CODEC.listOf().optionalFieldOf("snapshots", List.of()).forGetter(s -> new ArrayList<>(s.snapshotsByKey.values())),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("lastFind", Map.of()).forGetter(s -> s.lastFindItemByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("autosortModeByPlayer", Map.of()).forGetter(s -> s.autosortModeByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("highlightModeByPlayer", Map.of()).forGetter(s -> s.highlightModeByPlayerUuid),
+        Codec.unboundedMap(Codec.STRING, Codec.INT.listOf()).optionalFieldOf("lockedSlotsByPlayer", Map.of()).forGetter(s -> s.lockedSlotsByPlayerUuid),
+        Codec.unboundedMap(Codec.STRING, Codec.STRING.listOf()).optionalFieldOf("itemBlacklistByPlayer", Map.of()).forGetter(s -> s.itemBlacklistByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.BOOL).optionalFieldOf("clearHighlightsOnNextOpenByPlayer", Map.of()).forGetter(s -> s.clearHighlightsOnNextOpenByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("wandItemByPlayer", Map.of()).forGetter(s -> s.wandItemIdByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("wandPos1ByPlayer", Map.of()).forGetter(s -> s.wandPos1KeyByPlayerUuid),
@@ -52,8 +83,30 @@ public class ChestSortState extends PersistentState {
         Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC).optionalFieldOf("wandClipboardByPlayer", Map.of()).forGetter(s -> s.wandClipboardByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING.listOf()).optionalFieldOf("filters", Map.of()).forGetter(s -> s.legacyFilterItemsByKey),
         Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC).optionalFieldOf("filterSpecs", Map.of()).forGetter(s -> s.filterSpecByKey),
-        Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC).optionalFieldOf("presets", Map.of()).forGetter(s -> s.presetsByName)
-    ).apply(instance, ChestSortState::new));
+        ContainerBlacklistBundle.CODEC.forGetter(s -> new ContainerBlacklistBundle(s.blacklistSpecByKey, s.whitelistPriorityByKey)),
+        PresetBundle.CODEC.forGetter(s -> new PresetBundle(s.presetsByName, s.presetBlacklistByName))
+    ).apply(instance, (lastFullScanMs, snapshots, lastFind, autosortModes, highlightModes, lockedSlotsByPlayer, itemBlacklistByPlayer, clearHighlightsOnNextOpen, wandItemByPlayer, wandPos1ByPlayer, wandPos2ByPlayer, wandClipboardByPlayer, legacyFilters, filterSpecs, blacklistBundle, presetBundle) ->
+        new ChestSortState(
+            lastFullScanMs,
+            snapshots,
+            lastFind,
+            autosortModes,
+            highlightModes,
+            lockedSlotsByPlayer,
+            itemBlacklistByPlayer,
+            clearHighlightsOnNextOpen,
+            wandItemByPlayer,
+            wandPos1ByPlayer,
+            wandPos2ByPlayer,
+            wandClipboardByPlayer,
+            legacyFilters,
+            filterSpecs,
+            blacklistBundle.blacklistSpecs(),
+            blacklistBundle.whitelistPriorityByContainer(),
+            presetBundle.presets(),
+            presetBundle.presetBlacklists()
+        )
+    ));
 
     public static final PersistentStateType<ChestSortState> TYPE = new PersistentStateType<>(
         STATE_ID,
@@ -66,6 +119,8 @@ public class ChestSortState extends PersistentState {
     private final Map<String, String> lastFindItemByPlayerUuid = new HashMap<>();
     private final Map<String, String> autosortModeByPlayerUuid = new HashMap<>();
     private final Map<String, String> highlightModeByPlayerUuid = new HashMap<>();
+    private final Map<String, List<Integer>> lockedSlotsByPlayerUuid = new HashMap<>();
+    private final Map<String, List<String>> itemBlacklistByPlayerUuid = new HashMap<>();
     private final Map<String, Boolean> clearHighlightsOnNextOpenByPlayerUuid = new HashMap<>();
 
     // Wand feature: per-player bound item id and selection positions.
@@ -77,7 +132,10 @@ public class ChestSortState extends PersistentState {
     // Kept for save backward-compat; new versions store full specs in filterSpecByKey.
     private final Map<String, List<String>> legacyFilterItemsByKey = new HashMap<>();
     private final Map<String, ContainerFilterSpec> filterSpecByKey = new HashMap<>();
+    private final Map<String, ContainerFilterSpec> blacklistSpecByKey = new HashMap<>();
+    private final Map<String, Boolean> whitelistPriorityByKey = new HashMap<>();
     private final Map<String, ContainerFilterSpec> presetsByName = new HashMap<>();
+    private final Map<String, ContainerFilterSpec> presetBlacklistByName = new HashMap<>();
     private long lastFullScanMs = 0L;
 
     // Transient (non-persisted) state: last sort undo transaction per player.
@@ -106,7 +164,7 @@ public class ChestSortState extends PersistentState {
     public ChestSortState() {
     }
 
-    private ChestSortState(long lastFullScanMs, List<ContainerSnapshot> snapshots, Map<String, String> lastFind, Map<String, String> autosortModes, Map<String, String> highlightModes, Map<String, Boolean> clearHighlightsOnNextOpen, Map<String, String> wandItemByPlayer, Map<String, String> wandPos1ByPlayer, Map<String, String> wandPos2ByPlayer, Map<String, ContainerFilterSpec> wandClipboardByPlayer, Map<String, List<String>> legacyFilters, Map<String, ContainerFilterSpec> filterSpecs, Map<String, ContainerFilterSpec> presets) {
+    private ChestSortState(long lastFullScanMs, List<ContainerSnapshot> snapshots, Map<String, String> lastFind, Map<String, String> autosortModes, Map<String, String> highlightModes, Map<String, List<Integer>> lockedSlotsByPlayer, Map<String, List<String>> itemBlacklistByPlayer, Map<String, Boolean> clearHighlightsOnNextOpen, Map<String, String> wandItemByPlayer, Map<String, String> wandPos1ByPlayer, Map<String, String> wandPos2ByPlayer, Map<String, ContainerFilterSpec> wandClipboardByPlayer, Map<String, List<String>> legacyFilters, Map<String, ContainerFilterSpec> filterSpecs, Map<String, ContainerFilterSpec> blacklistSpecs, Map<String, Boolean> whitelistPriorityByContainer, Map<String, ContainerFilterSpec> presets, Map<String, ContainerFilterSpec> presetBlacklists) {
         this.lastFullScanMs = lastFullScanMs;
         for (ContainerSnapshot snapshot : snapshots) {
             this.snapshotsByKey.put(key(snapshot.dimensionId(), snapshot.posLong()), snapshot);
@@ -119,6 +177,14 @@ public class ChestSortState extends PersistentState {
 
         if (highlightModes != null) {
             this.highlightModeByPlayerUuid.putAll(highlightModes);
+        }
+
+        if (lockedSlotsByPlayer != null) {
+            this.lockedSlotsByPlayerUuid.putAll(lockedSlotsByPlayer);
+        }
+
+        if (itemBlacklistByPlayer != null) {
+            this.itemBlacklistByPlayerUuid.putAll(itemBlacklistByPlayer);
         }
 
         if (clearHighlightsOnNextOpen != null) {
@@ -149,8 +215,20 @@ public class ChestSortState extends PersistentState {
             this.filterSpecByKey.putAll(filterSpecs);
         }
 
+        if (blacklistSpecs != null) {
+            this.blacklistSpecByKey.putAll(blacklistSpecs);
+        }
+
+        if (whitelistPriorityByContainer != null) {
+            this.whitelistPriorityByKey.putAll(whitelistPriorityByContainer);
+        }
+
         if (presets != null) {
             this.presetsByName.putAll(presets);
+        }
+
+        if (presetBlacklists != null) {
+            this.presetBlacklistByName.putAll(presetBlacklists);
         }
 
         // If the world only has legacy filters, lift them into filter specs.
@@ -162,12 +240,190 @@ public class ChestSortState extends PersistentState {
         }
     }
 
+    public List<Integer> getLockedSlots(String playerUuid) {
+        if (playerUuid == null || playerUuid.isEmpty()) return List.of();
+        List<Integer> raw = lockedSlotsByPlayerUuid.get(playerUuid);
+        if (raw == null || raw.isEmpty()) return List.of();
+
+        java.util.LinkedHashSet<Integer> uniq = new java.util.LinkedHashSet<>();
+        for (Integer i : raw) {
+            if (i == null) continue;
+            if (i < 0) continue;
+            uniq.add(i);
+        }
+        if (uniq.isEmpty()) return List.of();
+        return List.copyOf(uniq);
+    }
+
+    public boolean isSlotLocked(String playerUuid, int playerInventoryIndex) {
+        if (playerUuid == null || playerUuid.isEmpty()) return false;
+        if (playerInventoryIndex < 0) return false;
+        List<Integer> raw = lockedSlotsByPlayerUuid.get(playerUuid);
+        if (raw == null || raw.isEmpty()) return false;
+        for (Integer i : raw) {
+            if (i != null && i == playerInventoryIndex) return true;
+        }
+        return false;
+    }
+
+    /**
+     * Toggles whether a player inventory slot index is protected.
+     *
+     * @return true if the slot is now locked; false if now unlocked.
+     */
+    public boolean toggleLockedSlot(String playerUuid, int playerInventoryIndex) {
+        if (playerUuid == null || playerUuid.isEmpty()) return false;
+        if (playerInventoryIndex < 0) return false;
+
+        ArrayList<Integer> list = new ArrayList<>(lockedSlotsByPlayerUuid.getOrDefault(playerUuid, List.of()));
+
+        boolean removed = false;
+        for (int i = 0; i < list.size(); i++) {
+            Integer v = list.get(i);
+            if (v != null && v == playerInventoryIndex) {
+                list.remove(i);
+                removed = true;
+                break;
+            }
+        }
+
+        boolean nowLocked;
+        if (removed) {
+            nowLocked = false;
+        } else {
+            list.add(playerInventoryIndex);
+            nowLocked = true;
+        }
+
+        if (list.isEmpty()) {
+            lockedSlotsByPlayerUuid.remove(playerUuid);
+        } else {
+            lockedSlotsByPlayerUuid.put(playerUuid, List.copyOf(list));
+        }
+
+        markDirty();
+        return nowLocked;
+    }
+
+    public List<String> getItemBlacklist(String playerUuid) {
+        if (playerUuid == null || playerUuid.isEmpty()) return List.of();
+        List<String> raw = itemBlacklistByPlayerUuid.get(playerUuid);
+        if (raw == null || raw.isEmpty()) return List.of();
+        return ContainerFilterSpec.normalizeStrings(raw);
+    }
+
+    public boolean isItemBlacklisted(String playerUuid, String itemId) {
+        if (playerUuid == null || playerUuid.isEmpty()) return false;
+        if (itemId == null) return false;
+        String t = itemId.trim();
+        if (t.isEmpty()) return false;
+
+        List<String> raw = itemBlacklistByPlayerUuid.get(playerUuid);
+        if (raw == null || raw.isEmpty()) return false;
+        for (String s : raw) {
+            if (s == null) continue;
+            if (t.equals(s.trim())) return true;
+        }
+        return false;
+    }
+
+    public boolean addItemToBlacklist(String playerUuid, String itemId) {
+        if (playerUuid == null || playerUuid.isEmpty()) return false;
+        if (itemId == null) return false;
+        String t = itemId.trim();
+        if (t.isEmpty()) return false;
+        Identifier id = Identifier.tryParse(t);
+        if (id == null) return false;
+
+        ArrayList<String> list = new ArrayList<>(itemBlacklistByPlayerUuid.getOrDefault(playerUuid, List.of()));
+        for (String s : list) {
+            if (s != null && t.equals(s.trim())) return false;
+        }
+        list.add(t);
+
+        itemBlacklistByPlayerUuid.put(playerUuid, List.copyOf(ContainerFilterSpec.normalizeStrings(list)));
+        markDirty();
+        return true;
+    }
+
+    /** Adds multiple item ids to a player's blacklist. Returns how many new ids were added. */
+    public int addItemsToBlacklist(String playerUuid, java.util.Collection<String> itemIds) {
+        if (playerUuid == null || playerUuid.isEmpty()) return 0;
+        if (itemIds == null || itemIds.isEmpty()) return 0;
+
+        LinkedHashSet<String> merged = new LinkedHashSet<>(getItemBlacklist(playerUuid));
+        int before = merged.size();
+
+        for (String itemId : itemIds) {
+            if (itemId == null) continue;
+            String t = itemId.trim();
+            if (t.isEmpty()) continue;
+            Identifier id = Identifier.tryParse(t);
+            if (id == null) continue;
+            merged.add(t);
+        }
+
+        int added = merged.size() - before;
+        if (added <= 0) return 0;
+
+        itemBlacklistByPlayerUuid.put(playerUuid, List.copyOf(merged));
+        markDirty();
+        return added;
+    }
+
+    public boolean removeItemFromBlacklist(String playerUuid, String itemId) {
+        if (playerUuid == null || playerUuid.isEmpty()) return false;
+        if (itemId == null) return false;
+        String t = itemId.trim();
+        if (t.isEmpty()) return false;
+
+        ArrayList<String> list = new ArrayList<>(itemBlacklistByPlayerUuid.getOrDefault(playerUuid, List.of()));
+        boolean removed = false;
+        for (int i = 0; i < list.size(); i++) {
+            String s = list.get(i);
+            if (s != null && t.equals(s.trim())) {
+                list.remove(i);
+                removed = true;
+                break;
+            }
+        }
+
+        if (!removed) return false;
+
+        List<String> norm = ContainerFilterSpec.normalizeStrings(list);
+        if (norm.isEmpty()) {
+            itemBlacklistByPlayerUuid.remove(playerUuid);
+        } else {
+            itemBlacklistByPlayerUuid.put(playerUuid, norm);
+        }
+        markDirty();
+        return true;
+    }
+
+    public int clearItemBlacklist(String playerUuid) {
+        if (playerUuid == null || playerUuid.isEmpty()) return 0;
+        List<String> prev = itemBlacklistByPlayerUuid.remove(playerUuid);
+        int removed = prev == null ? 0 : prev.size();
+        if (removed > 0) markDirty();
+        return removed;
+    }
+
     public ContainerFilterSpec getFilterSpec(String dimId, long posLong) {
         ContainerFilterSpec spec = filterSpecByKey.get(key(dimId, posLong));
         if (spec != null) return spec;
         // Fallback for saves that only have legacy filters.
         List<String> legacy = legacyFilterItemsByKey.getOrDefault(key(dimId, posLong), List.of());
         return ContainerFilterSpec.fromLegacyItems(legacy).normalized();
+    }
+
+    public ContainerFilterSpec getBlacklistSpec(String dimId, long posLong) {
+        ContainerFilterSpec spec = blacklistSpecByKey.get(key(dimId, posLong));
+        return (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : spec).normalized();
+    }
+
+    public boolean whitelistPriority(String dimId, long posLong) {
+        Boolean v = whitelistPriorityByKey.get(key(dimId, posLong));
+        return v == null ? true : v;
     }
 
     /**
@@ -195,6 +451,28 @@ public class ChestSortState extends PersistentState {
         return new ContainerFilterSpec(List.copyOf(mergedItems), mergedTags, List.of(), normalizedBase.autosort()).normalized();
     }
 
+    /** Like {@link #resolveWithAppliedPresets(ContainerFilterSpec)}, but applies the blacklist side of presets. */
+    public ContainerFilterSpec resolveBlacklistWithAppliedPresets(ContainerFilterSpec base) {
+        if (base == null) return new ContainerFilterSpec(List.of(), List.of(), List.of(), false);
+        ContainerFilterSpec normalizedBase = base.normalized();
+        List<String> applied = normalizedBase.presets();
+        if (applied == null || applied.isEmpty()) return normalizedBase;
+
+        LinkedHashSet<String> mergedItems = new LinkedHashSet<>(normalizedBase.items() == null ? List.of() : normalizedBase.items());
+        ArrayList<dev.dromer.chestsort.filter.TagFilterSpec> mergedTags = new ArrayList<>(normalizedBase.tags() == null ? List.of() : normalizedBase.tags());
+
+        for (String presetName : applied) {
+            if (presetName == null) continue;
+            ContainerFilterSpec preset = getPresetBlacklist(presetName);
+            if (preset == null) continue;
+            ContainerFilterSpec p = preset.normalized();
+            if (p.items() != null) mergedItems.addAll(p.items());
+            if (p.tags() != null) mergedTags.addAll(p.tags());
+        }
+
+        return new ContainerFilterSpec(List.copyOf(mergedItems), mergedTags, List.of(), normalizedBase.autosort()).normalized();
+    }
+
     public void setFilterSpec(String dimId, long posLong, ContainerFilterSpec spec) {
         String k = key(dimId, posLong);
         ContainerFilterSpec normalized = (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : spec).normalized();
@@ -206,6 +484,29 @@ public class ChestSortState extends PersistentState {
             filterSpecByKey.put(k, normalized);
             // Also mirror items into legacy list for backward compatibility.
             legacyFilterItemsByKey.put(k, normalized.items());
+        }
+        markDirty();
+    }
+
+    public void setBlacklistSpec(String dimId, long posLong, ContainerFilterSpec spec) {
+        String k = key(dimId, posLong);
+        ContainerFilterSpec normalized = (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : spec).normalized();
+        if (normalized.isEmpty()) {
+            blacklistSpecByKey.remove(k);
+        } else {
+            // Autosort is a per-container setting stored on the whitelist spec; blacklist ignores it.
+            blacklistSpecByKey.put(k, new ContainerFilterSpec(normalized.items(), normalized.tags(), normalized.presets(), false).normalized());
+        }
+        markDirty();
+    }
+
+    public void setWhitelistPriority(String dimId, long posLong, boolean whitelistPriority) {
+        String k = key(dimId, posLong);
+        if (whitelistPriority) {
+            // default; avoid writing save noise
+            whitelistPriorityByKey.remove(k);
+        } else {
+            whitelistPriorityByKey.put(k, false);
         }
         markDirty();
     }
@@ -427,9 +728,18 @@ public class ChestSortState extends PersistentState {
         return Map.copyOf(presetsByName);
     }
 
+    public Map<String, ContainerFilterSpec> getPresetBlacklists() {
+        return Map.copyOf(presetBlacklistByName);
+    }
+
     public ContainerFilterSpec getPreset(String name) {
         if (name == null) return null;
         return presetsByName.get(name.trim());
+    }
+
+    public ContainerFilterSpec getPresetBlacklist(String name) {
+        if (name == null) return null;
+        return presetBlacklistByName.get(name.trim());
     }
 
     public boolean hasPreset(String name) {
@@ -445,17 +755,30 @@ public class ChestSortState extends PersistentState {
         // Preset definitions should not themselves carry applied preset lists.
         normalized = new ContainerFilterSpec(normalized.items(), normalized.tags(), List.of(), false).normalized();
         presetsByName.put(n, normalized);
+        presetBlacklistByName.putIfAbsent(n, new ContainerFilterSpec(List.of(), List.of(), List.of(), false).normalized());
         markDirty();
         return true;
     }
 
     public void setPreset(String name, ContainerFilterSpec spec) {
+        setPreset(name, spec, null);
+    }
+
+    public void setPreset(String name, ContainerFilterSpec whitelistSpec, ContainerFilterSpec blacklistSpec) {
         String n = (name == null ? "" : name.trim());
         if (n.isEmpty()) return;
-        ContainerFilterSpec normalized = (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : spec).normalized();
-        // Preset definitions should not themselves carry applied preset lists.
-        normalized = new ContainerFilterSpec(normalized.items(), normalized.tags(), List.of(), false).normalized();
-        presetsByName.put(n, normalized);
+
+        ContainerFilterSpec wl = (whitelistSpec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : whitelistSpec).normalized();
+        wl = new ContainerFilterSpec(wl.items(), wl.tags(), List.of(), false).normalized();
+        presetsByName.put(n, wl);
+
+        if (blacklistSpec != null) {
+            ContainerFilterSpec bl = (blacklistSpec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of(), false) : blacklistSpec).normalized();
+            bl = new ContainerFilterSpec(bl.items(), bl.tags(), List.of(), false).normalized();
+            presetBlacklistByName.put(n, bl);
+        } else {
+            presetBlacklistByName.putIfAbsent(n, new ContainerFilterSpec(List.of(), List.of(), List.of(), false).normalized());
+        }
         markDirty();
     }
 
@@ -463,6 +786,7 @@ public class ChestSortState extends PersistentState {
         String n = (name == null ? "" : name.trim());
         if (n.isEmpty()) return false;
         ContainerFilterSpec removed = presetsByName.remove(n);
+        presetBlacklistByName.remove(n);
         if (removed != null) {
             markDirty();
             return true;
@@ -479,6 +803,11 @@ public class ChestSortState extends PersistentState {
         if (presetsByName.containsKey(b)) return false;
         ContainerFilterSpec spec = presetsByName.remove(a);
         presetsByName.put(b, spec);
+
+        ContainerFilterSpec bl = presetBlacklistByName.remove(a);
+        if (bl != null) {
+            presetBlacklistByName.put(b, bl);
+        }
         markDirty();
         return true;
     }

@@ -9,6 +9,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import dev.dromer.chestsort.client.ClientContainerContext;
 import dev.dromer.chestsort.client.ClientHighlightState;
+import dev.dromer.chestsort.client.ClientLockedSlotsState;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.client.ClientSortNotificationState;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
@@ -16,12 +17,15 @@ import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
 import dev.dromer.chestsort.net.payload.OrganizeRequestPayload;
 import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
+import dev.dromer.chestsort.net.payload.SetContainerFiltersPayload;
 import dev.dromer.chestsort.net.payload.SetFilterPayload;
 import dev.dromer.chestsort.net.payload.SetFilterV2Payload;
 import dev.dromer.chestsort.net.payload.SetPresetPayload;
+import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
 import dev.dromer.chestsort.net.payload.SortRequestPayload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
 import dev.dromer.chestsort.net.payload.UndoSortPayload;
+import dev.dromer.chestsort.net.payload.ToggleLockedSlotPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
@@ -113,6 +117,12 @@ public abstract class HandledScreenMixin {
     private ButtonWidget chestsort$filterButton;
 
     @Unique
+    private ButtonWidget chestsort$whitelistTabButton;
+
+    @Unique
+    private ButtonWidget chestsort$blacklistTabButton;
+
+    @Unique
     private ButtonWidget chestsort$importOpenButton;
 
     @Unique
@@ -126,6 +136,12 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private ButtonWidget chestsort$autosortButton;
+
+    @Unique
+    private ButtonWidget chestsort$lockSlotButton;
+
+    @Unique
+    private boolean chestsort$lockSlotsMode = false;
 
     @Unique
     private ButtonWidget chestsort$undoButton;
@@ -168,6 +184,36 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private java.util.List<String> chestsort$editingFilterPresets = java.util.List.of();
+
+    @Unique
+    private java.util.List<String> chestsort$editingWhitelistItems = java.util.List.of();
+
+    @Unique
+    private java.util.List<TagFilterSpec> chestsort$editingWhitelistTags = java.util.List.of();
+
+    @Unique
+    private java.util.List<String> chestsort$editingWhitelistPresets = java.util.List.of();
+
+    @Unique
+    private java.util.List<String> chestsort$editingBlacklistItems = java.util.List.of();
+
+    @Unique
+    private java.util.List<TagFilterSpec> chestsort$editingBlacklistTags = java.util.List.of();
+
+    @Unique
+    private java.util.List<String> chestsort$editingBlacklistPresets = java.util.List.of();
+
+    @Unique
+    private boolean chestsort$editingWhitelistPriority = true;
+
+    @Unique
+    private static final int CHESTSORT_TAB_WHITELIST = 0;
+
+    @Unique
+    private static final int CHESTSORT_TAB_BLACKLIST = 1;
+
+    @Unique
+    private int chestsort$filterTab = CHESTSORT_TAB_WHITELIST;
 
     @Unique
     private boolean chestsort$editingAutosort = false;
@@ -293,6 +339,9 @@ public abstract class HandledScreenMixin {
     private static final int CHESTSORT_LEFT_KIND_AUTOSORT = 6;
 
     @Unique
+    private static final int CHESTSORT_LEFT_KIND_PRIORITY = 7;
+
+    @Unique
     private static int chestsort$leftRowEncode(int kind, int index) {
         return (kind << 24) | (index & 0x00FFFFFF);
     }
@@ -321,6 +370,15 @@ public abstract class HandledScreenMixin {
         if (chestsort$editingFilterPresets == null) {
             chestsort$editingFilterPresets = java.util.List.of();
         }
+
+        if (chestsort$editingWhitelistItems == null) chestsort$editingWhitelistItems = java.util.List.of();
+        if (chestsort$editingWhitelistTags == null) chestsort$editingWhitelistTags = java.util.List.of();
+        if (chestsort$editingWhitelistPresets == null) chestsort$editingWhitelistPresets = java.util.List.of();
+
+        if (chestsort$editingBlacklistItems == null) chestsort$editingBlacklistItems = java.util.List.of();
+        if (chestsort$editingBlacklistTags == null) chestsort$editingBlacklistTags = java.util.List.of();
+        if (chestsort$editingBlacklistPresets == null) chestsort$editingBlacklistPresets = java.util.List.of();
+
         if (chestsort$searchResultItems == null) {
             chestsort$searchResultItems = java.util.List.of();
         }
@@ -336,6 +394,67 @@ public abstract class HandledScreenMixin {
         if (chestsort$tagBrowserItems == null) {
             chestsort$tagBrowserItems = java.util.List.of();
         }
+    }
+
+    @Unique
+    private void chestsort$syncTabStorageFromEditingLists() {
+        if (chestsort$filterTab == CHESTSORT_TAB_BLACKLIST) {
+            chestsort$editingBlacklistItems = chestsort$editingFilterItems;
+            chestsort$editingBlacklistTags = chestsort$editingFilterTags;
+            chestsort$editingBlacklistPresets = chestsort$editingFilterPresets;
+        } else {
+            chestsort$editingWhitelistItems = chestsort$editingFilterItems;
+            chestsort$editingWhitelistTags = chestsort$editingFilterTags;
+            chestsort$editingWhitelistPresets = chestsort$editingFilterPresets;
+        }
+    }
+
+    @Unique
+    private void chestsort$applyActiveTabToEditingLists() {
+        if (chestsort$filterTab == CHESTSORT_TAB_BLACKLIST) {
+            chestsort$editingFilterItems = chestsort$editingBlacklistItems;
+            chestsort$editingFilterTags = chestsort$editingBlacklistTags;
+            chestsort$editingFilterPresets = chestsort$editingBlacklistPresets;
+        } else {
+            chestsort$editingFilterItems = chestsort$editingWhitelistItems;
+            chestsort$editingFilterTags = chestsort$editingWhitelistTags;
+            chestsort$editingFilterPresets = chestsort$editingWhitelistPresets;
+        }
+
+        if (!(chestsort$editingFilterItems instanceof java.util.ArrayList)) {
+            chestsort$editingFilterItems = new java.util.ArrayList<>(chestsort$editingFilterItems == null ? java.util.List.of() : chestsort$editingFilterItems);
+        }
+        if (!(chestsort$editingFilterTags instanceof java.util.ArrayList)) {
+            chestsort$editingFilterTags = new java.util.ArrayList<>(chestsort$editingFilterTags == null ? java.util.List.of() : chestsort$editingFilterTags);
+        }
+        if (!(chestsort$editingFilterPresets instanceof java.util.ArrayList)) {
+            chestsort$editingFilterPresets = new java.util.ArrayList<>(chestsort$editingFilterPresets == null ? java.util.List.of() : chestsort$editingFilterPresets);
+        }
+    }
+
+    @Unique
+    private void chestsort$switchFilterTab(int tab) {
+        if (tab != CHESTSORT_TAB_WHITELIST && tab != CHESTSORT_TAB_BLACKLIST) return;
+        if (chestsort$filterTab == tab) return;
+
+        chestsort$syncTabStorageFromEditingLists();
+        chestsort$filterTab = tab;
+        chestsort$applyActiveTabToEditingLists();
+
+        chestsort$tagBrowserMode = false;
+        chestsort$tagBrowserTagId = "";
+        chestsort$tagBrowserItems = java.util.List.of();
+
+        chestsort$leftScroll = 0;
+        chestsort$resultsScroll = 0;
+        chestsort$selectedLeftRowIndex = -1;
+        chestsort$selectedResultIndex = -1;
+
+        if (chestsort$searchField != null) {
+            chestsort$searchField.setText("");
+            chestsort$updateSearchResults();
+        }
+        chestsort$clampScroll();
     }
 
     @Unique
@@ -574,9 +693,10 @@ public abstract class HandledScreenMixin {
         chestsort$rightPanelX = x + backgroundWidth + CHESTSORT_PANEL_GAP;
 
         // Compute vertical layout for filter mode so buttons/results never go off-screen.
-        // Left panel is a single scrollable list containing two expandable sections.
-        chestsort$leftRowsShown = Math.min(12, Math.max(0, (availableH - CHESTSORT_PAD_BOTTOM) / CHESTSORT_ROW_H));
-        int leftPanelH = (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM;
+        // Left panel is a scrollable list; in filter mode it may have a tab header.
+        int leftHeaderH = chestsort$filterMode ? CHESTSORT_HEADER_H : 0;
+        chestsort$leftRowsShown = Math.min(12, Math.max(0, (availableH - leftHeaderH - CHESTSORT_PAD_BOTTOM) / CHESTSORT_ROW_H));
+        int leftPanelH = (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM + leftHeaderH;
 
         int rightPanelH;
         if (chestsort$filterMode) {
@@ -594,7 +714,8 @@ public abstract class HandledScreenMixin {
             chestsort$resultsRowsShown = 0;
             // Filter + Import/Export + Sort + Autosort (or import/export popup).
             // Filter + Import/Export + Sort + Organize + Autosort
-            rightPanelH = 116;
+            // + Lock Slot
+            rightPanelH = 140;
             chestsort$resultsPanelY = 0;
             chestsort$resultsRowsY = 0;
         }
@@ -656,10 +777,31 @@ public abstract class HandledScreenMixin {
             chestsort$autosortButton.setY(rightY + 96);
             chestsort$autosortButton.setWidth(rightW);
         }
+        if (chestsort$lockSlotButton != null) {
+            chestsort$lockSlotButton.setX(rightX);
+            chestsort$lockSlotButton.setY(rightY + 120);
+            chestsort$lockSlotButton.setWidth(rightW);
+        }
         if (chestsort$searchField != null) {
             chestsort$searchField.setX(rightX);
             chestsort$searchField.setY(rightY);
             chestsort$searchField.setWidth(rightW);
+        }
+
+        int leftX = chestsort$leftPanelX;
+        int leftY = chestsort$leftPanelY;
+        int leftW = chestsort$leftPanelW;
+        if (chestsort$whitelistTabButton != null) {
+            int w = Math.max(0, (leftW - 18) / 2);
+            chestsort$whitelistTabButton.setX(leftX + 6);
+            chestsort$whitelistTabButton.setY(leftY + 2);
+            chestsort$whitelistTabButton.setWidth(w);
+        }
+        if (chestsort$blacklistTabButton != null) {
+            int w = Math.max(0, (leftW - 18) / 2);
+            chestsort$blacklistTabButton.setX(leftX + 12 + w);
+            chestsort$blacklistTabButton.setY(leftY + 2);
+            chestsort$blacklistTabButton.setWidth(w);
         }
 
         if (chestsort$editPresetButton != null) {
@@ -734,46 +876,97 @@ public abstract class HandledScreenMixin {
             return;
         }
 
-        java.util.List<String> appliedPresets = ContainerFilterSpec.normalizeStrings(chestsort$editingFilterPresets == null ? java.util.List.of() : chestsort$editingFilterPresets);
-
-        java.util.List<String> normalizedItems = ContainerFilterSpec.normalizeStrings(chestsort$editingFilterItems);
-        java.util.List<TagFilterSpec> normalizedTags = (chestsort$editingFilterTags == null ? java.util.List.of() : chestsort$editingFilterTags);
-
-        ContainerFilterSpec specForContainer = new ContainerFilterSpec(normalizedItems, normalizedTags, appliedPresets, chestsort$editingAutosort).normalized();
-        ContainerFilterSpec specForPreset = new ContainerFilterSpec(normalizedItems, normalizedTags, java.util.List.of(), false).normalized();
+        // Keep tab storage in sync in case list instances were replaced.
+        chestsort$syncTabStorageFromEditingLists();
 
         // Preset editor target.
         if (chestsort$editingPresetName != null && !chestsort$editingPresetName.isEmpty() && chestsort$editPresetMode) {
             String presetName = chestsort$editingPresetName.trim();
             if (!presetName.isEmpty()) {
-                ClientPlayNetworking.send(new SetPresetPayload(presetName, specForPreset));
-                ClientPresetRegistry.putLocal(presetName, specForPreset);
+                java.util.List<String> wlItems = ContainerFilterSpec.normalizeStrings(chestsort$editingWhitelistItems);
+                java.util.List<TagFilterSpec> wlTags = (chestsort$editingWhitelistTags == null ? java.util.List.of() : chestsort$editingWhitelistTags);
+                ContainerFilterSpec whitelistForPreset = new ContainerFilterSpec(wlItems, wlTags, java.util.List.of(), false).normalized();
+
+                java.util.List<String> blItems = ContainerFilterSpec.normalizeStrings(chestsort$editingBlacklistItems);
+                java.util.List<TagFilterSpec> blTags = (chestsort$editingBlacklistTags == null ? java.util.List.of() : chestsort$editingBlacklistTags);
+                ContainerFilterSpec blacklistForPreset = new ContainerFilterSpec(blItems, blTags, java.util.List.of(), false).normalized();
+
+                ClientPlayNetworking.send(new SetPresetV2Payload(presetName, whitelistForPreset, blacklistForPreset));
+                ClientPresetRegistry.putLocal(presetName, whitelistForPreset);
+                ClientPresetRegistry.putLocalBlacklist(presetName, blacklistForPreset);
+
+                chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelistForPreset.items());
+                chestsort$editingWhitelistTags = new java.util.ArrayList<>(whitelistForPreset.tags());
+                chestsort$editingWhitelistPresets = new java.util.ArrayList<>();
+
+                chestsort$editingBlacklistItems = new java.util.ArrayList<>(blacklistForPreset.items());
+                chestsort$editingBlacklistTags = new java.util.ArrayList<>(blacklistForPreset.tags());
+                chestsort$editingBlacklistPresets = new java.util.ArrayList<>();
+
+                chestsort$applyActiveTabToEditingLists();
             }
-            chestsort$editingFilterItems = new java.util.ArrayList<>(specForPreset.items());
-            chestsort$editingFilterTags = new java.util.ArrayList<>(specForPreset.tags());
             chestsort$filterDirty = false;
             return;
         }
 
-        // v2 payload (items + tags) + legacy v1 payload (items only).
-        ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), specForContainer));
-        ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), specForContainer.items()));
-        ClientContainerContext.set(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), ClientContainerContext.containerType(), specForContainer);
+        java.util.List<String> wlItems = ContainerFilterSpec.normalizeStrings(chestsort$editingWhitelistItems);
+        java.util.List<TagFilterSpec> wlTags = (chestsort$editingWhitelistTags == null ? java.util.List.of() : chestsort$editingWhitelistTags);
+        java.util.List<String> wlPresets = ContainerFilterSpec.normalizeStrings(chestsort$editingWhitelistPresets == null ? java.util.List.of() : chestsort$editingWhitelistPresets);
+        ContainerFilterSpec whitelistForContainer = new ContainerFilterSpec(wlItems, wlTags, wlPresets, chestsort$editingAutosort).normalized();
 
-        chestsort$editingFilterItems = new java.util.ArrayList<>(specForContainer.items());
-        chestsort$editingFilterTags = new java.util.ArrayList<>(specForContainer.tags());
-        chestsort$editingFilterPresets = new java.util.ArrayList<>(specForContainer.presets());
+        java.util.List<String> blItems = ContainerFilterSpec.normalizeStrings(chestsort$editingBlacklistItems);
+        java.util.List<TagFilterSpec> blTags = (chestsort$editingBlacklistTags == null ? java.util.List.of() : chestsort$editingBlacklistTags);
+        java.util.List<String> blPresets = ContainerFilterSpec.normalizeStrings(chestsort$editingBlacklistPresets == null ? java.util.List.of() : chestsort$editingBlacklistPresets);
+        ContainerFilterSpec blacklistForContainer = new ContainerFilterSpec(blItems, blTags, blPresets, false).normalized();
+
+        ClientPlayNetworking.send(new SetContainerFiltersPayload(
+            ClientContainerContext.dimensionId(),
+            ClientContainerContext.posLong(),
+            whitelistForContainer,
+            blacklistForContainer,
+            chestsort$editingWhitelistPriority
+        ));
+
+        // Legacy whitelist-only payloads (still useful for compatibility).
+        ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), whitelistForContainer));
+        ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), whitelistForContainer.items()));
+
+        ClientContainerContext.set(
+            ClientContainerContext.dimensionId(),
+            ClientContainerContext.posLong(),
+            ClientContainerContext.containerType(),
+            whitelistForContainer,
+            blacklistForContainer,
+            chestsort$editingWhitelistPriority
+        );
+
+        chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelistForContainer.items());
+        chestsort$editingWhitelistTags = new java.util.ArrayList<>(whitelistForContainer.tags());
+        chestsort$editingWhitelistPresets = new java.util.ArrayList<>(whitelistForContainer.presets());
+
+        chestsort$editingBlacklistItems = new java.util.ArrayList<>(blacklistForContainer.items());
+        chestsort$editingBlacklistTags = new java.util.ArrayList<>(blacklistForContainer.tags());
+        chestsort$editingBlacklistPresets = new java.util.ArrayList<>(blacklistForContainer.presets());
+
+        chestsort$applyActiveTabToEditingLists();
         chestsort$filterDirty = false;
     }
 
     @Inject(method = "init", at = @At("TAIL"))
     @SuppressWarnings("unused")
     private void chestsort$init(CallbackInfo ci) {
-        var spec = ClientContainerContext.filterSpec();
-        chestsort$editingFilterItems = new java.util.ArrayList<>(spec == null ? java.util.List.of() : spec.items());
-        chestsort$editingFilterTags = new java.util.ArrayList<>(spec == null ? java.util.List.of() : spec.tags());
-        chestsort$editingFilterPresets = new java.util.ArrayList<>(spec == null ? java.util.List.of() : (spec.presets() == null ? java.util.List.of() : spec.presets()));
-        chestsort$editingAutosort = spec != null && spec.autosort();
+        var whitelist = ClientContainerContext.filterSpec();
+        var blacklist = ClientContainerContext.blacklistSpec();
+        chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelist == null ? java.util.List.of() : whitelist.items());
+        chestsort$editingWhitelistTags = new java.util.ArrayList<>(whitelist == null ? java.util.List.of() : whitelist.tags());
+        chestsort$editingWhitelistPresets = new java.util.ArrayList<>(whitelist == null ? java.util.List.of() : (whitelist.presets() == null ? java.util.List.of() : whitelist.presets()));
+        chestsort$editingBlacklistItems = new java.util.ArrayList<>(blacklist == null ? java.util.List.of() : blacklist.items());
+        chestsort$editingBlacklistTags = new java.util.ArrayList<>(blacklist == null ? java.util.List.of() : blacklist.tags());
+        chestsort$editingBlacklistPresets = new java.util.ArrayList<>(blacklist == null ? java.util.List.of() : (blacklist.presets() == null ? java.util.List.of() : blacklist.presets()));
+        chestsort$editingWhitelistPriority = ClientContainerContext.whitelistPriority();
+        chestsort$filterTab = CHESTSORT_TAB_WHITELIST;
+        chestsort$applyActiveTabToEditingLists();
+        chestsort$editingAutosort = whitelist != null && whitelist.autosort();
 
         chestsort$updateLayout();
         int rightW = CHESTSORT_PANEL_W;
@@ -791,11 +984,18 @@ public abstract class HandledScreenMixin {
 
         chestsort$filterButton = ButtonWidget.builder(Text.literal("Filter"), b -> {
             if (!ClientContainerContext.isChestOrBarrel()) return;
-            var spec2 = ClientContainerContext.filterSpec();
-            chestsort$editingFilterItems = new java.util.ArrayList<>(spec2 == null ? java.util.List.of() : spec2.items());
-            chestsort$editingFilterTags = new java.util.ArrayList<>(spec2 == null ? java.util.List.of() : spec2.tags());
-            chestsort$editingFilterPresets = new java.util.ArrayList<>(spec2 == null ? java.util.List.of() : (spec2.presets() == null ? java.util.List.of() : spec2.presets()));
-            chestsort$editingAutosort = spec2 != null && spec2.autosort();
+            var wl = ClientContainerContext.filterSpec();
+            var bl = ClientContainerContext.blacklistSpec();
+            chestsort$editingWhitelistItems = new java.util.ArrayList<>(wl == null ? java.util.List.of() : wl.items());
+            chestsort$editingWhitelistTags = new java.util.ArrayList<>(wl == null ? java.util.List.of() : wl.tags());
+            chestsort$editingWhitelistPresets = new java.util.ArrayList<>(wl == null ? java.util.List.of() : (wl.presets() == null ? java.util.List.of() : wl.presets()));
+            chestsort$editingBlacklistItems = new java.util.ArrayList<>(bl == null ? java.util.List.of() : bl.items());
+            chestsort$editingBlacklistTags = new java.util.ArrayList<>(bl == null ? java.util.List.of() : bl.tags());
+            chestsort$editingBlacklistPresets = new java.util.ArrayList<>(bl == null ? java.util.List.of() : (bl.presets() == null ? java.util.List.of() : bl.presets()));
+            chestsort$editingWhitelistPriority = ClientContainerContext.whitelistPriority();
+            chestsort$filterTab = CHESTSORT_TAB_WHITELIST;
+            chestsort$applyActiveTabToEditingLists();
+            chestsort$editingAutosort = wl != null && wl.autosort();
             chestsort$filterMode = true;
             chestsort$filterDirty = false;
             chestsort$tagBrowserMode = false;
@@ -824,6 +1024,16 @@ public abstract class HandledScreenMixin {
             .dimensions(rightX, rightY, rightW, 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$filterButton);
+
+        chestsort$whitelistTabButton = ButtonWidget.builder(Text.literal("Whitelist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_WHITELIST))
+            .dimensions(0, 0, 10, 20)
+            .build();
+        ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$whitelistTabButton);
+
+        chestsort$blacklistTabButton = ButtonWidget.builder(Text.literal("Blacklist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_BLACKLIST))
+            .dimensions(0, 0, 10, 20)
+            .build();
+        ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$blacklistTabButton);
 
         chestsort$importOpenButton = ButtonWidget.builder(Text.literal("Import"), b -> {
             if (!ClientContainerContext.isChestOrBarrel()) return;
@@ -899,6 +1109,13 @@ public abstract class HandledScreenMixin {
             chestsort$editingAutosort = next;
         }).dimensions(rightX, rightY + 96, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$autosortButton);
+
+        chestsort$lockSlotButton = ButtonWidget.builder(Text.literal("Lock Slots: OFF"), b -> {
+            if (!ClientContainerContext.isChestOrBarrel()) return;
+            if (ClientContainerContext.dimensionId().isEmpty()) return;
+            chestsort$lockSlotsMode = !chestsort$lockSlotsMode;
+        }).dimensions(rightX, rightY + 120, rightW, 20).build();
+        ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$lockSlotButton);
 
         TextRenderer tr = MinecraftClient.getInstance().textRenderer;
         if (tr != null) {
@@ -992,6 +1209,12 @@ public abstract class HandledScreenMixin {
             chestsort$autosortButton.setMessage(Text.literal("Autosort: " + (on ? "ON" : "OFF")));
         }
 
+        if (chestsort$lockSlotButton != null) {
+            chestsort$lockSlotButton.visible = showMainButtons;
+            chestsort$lockSlotButton.active = showMainButtons;
+            chestsort$lockSlotButton.setMessage(Text.literal("Lock Slots: " + (chestsort$lockSlotsMode ? "ON" : "OFF")));
+        }
+
         if (chestsort$undoButton != null) {
             boolean showUndo = ClientContainerContext.isChestOrBarrel()
                 && ClientSortNotificationState.isActiveForCurrentContainer()
@@ -1013,6 +1236,17 @@ public abstract class HandledScreenMixin {
         if (chestsort$searchField != null) {
             chestsort$searchField.visible = isTarget && chestsort$filterMode && hasRightPanel;
             chestsort$searchField.setEditable(isTarget && chestsort$filterMode && hasRightPanel);
+        }
+
+        boolean hasLeftPanel = chestsort$leftPanelW >= 20;
+        boolean showTabs = isTarget && chestsort$filterMode && hasLeftPanel;
+        if (chestsort$whitelistTabButton != null) {
+            chestsort$whitelistTabButton.visible = showTabs;
+            chestsort$whitelistTabButton.active = showTabs && (chestsort$filterTab != CHESTSORT_TAB_WHITELIST);
+        }
+        if (chestsort$blacklistTabButton != null) {
+            chestsort$blacklistTabButton.visible = showTabs;
+            chestsort$blacklistTabButton.active = showTabs && (chestsort$filterTab != CHESTSORT_TAB_BLACKLIST);
         }
 
         boolean showEditPreset = isTarget && chestsort$filterMode && hasRightPanel && chestsort$editingPresetName != null && !chestsort$editingPresetName.isEmpty();
@@ -1099,14 +1333,17 @@ public abstract class HandledScreenMixin {
         chestsort$exportPopupOpen = false;
         chestsort$presetExportError = "";
 
-        ContainerFilterSpec spec = ClientPresetRegistry.get(name);
-        if (spec == null || spec.isEmpty()) {
+        ContainerFilterSpec wl = ClientPresetRegistry.get(name);
+        ContainerFilterSpec bl = ClientPresetRegistry.getBlacklist(name);
+        if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) {
             chestsort$presetExportError = "No preset / empty";
             if (chestsort$presetExportField != null) chestsort$presetExportField.setText("");
             return;
         }
 
-        String encoded = chestsort$encodeFilterSpec(spec);
+        ContainerFilterSpec safeWl = wl == null ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : wl;
+        ContainerFilterSpec safeBl = bl == null ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : bl;
+        String encoded = Cs2StringCodec.encodePreset(name, safeWl, safeBl);
         if (chestsort$presetExportField != null) {
             chestsort$presetExportField.setText(encoded);
             chestsort$presetExportField.setFocused(true);
@@ -1134,11 +1371,26 @@ public abstract class HandledScreenMixin {
         String name = presetName == null ? "" : presetName.trim();
         if (name.isEmpty()) return;
 
-        ContainerFilterSpec spec = ClientPresetRegistry.get(name);
-    ContainerFilterSpec safe = (spec == null) ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : spec.normalized();
+        ContainerFilterSpec wl = ClientPresetRegistry.get(name);
+        ContainerFilterSpec bl = ClientPresetRegistry.getBlacklist(name);
 
-        chestsort$editingFilterItems = new java.util.ArrayList<>(safe.items());
-        chestsort$editingFilterTags = new java.util.ArrayList<>(safe.tags());
+        ContainerFilterSpec safeWl = (wl == null)
+            ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of())
+            : wl.normalized();
+        ContainerFilterSpec safeBl = (bl == null)
+            ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of())
+            : bl.normalized();
+
+        chestsort$editingWhitelistItems = new java.util.ArrayList<>(safeWl.items());
+        chestsort$editingWhitelistTags = new java.util.ArrayList<>(safeWl.tags());
+        chestsort$editingWhitelistPresets = new java.util.ArrayList<>();
+
+        chestsort$editingBlacklistItems = new java.util.ArrayList<>(safeBl.items());
+        chestsort$editingBlacklistTags = new java.util.ArrayList<>(safeBl.tags());
+        chestsort$editingBlacklistPresets = new java.util.ArrayList<>();
+
+        chestsort$filterTab = CHESTSORT_TAB_WHITELIST;
+        chestsort$applyActiveTabToEditingLists();
         chestsort$editingPresetName = name;
         chestsort$editPresetMode = false;
         chestsort$filterDirty = false;
@@ -1258,17 +1510,33 @@ public abstract class HandledScreenMixin {
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
     private void chestsort$mouseClicked(net.minecraft.client.gui.Click click, boolean bl, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
-        if (!ClientContainerContext.isChestOrBarrel() || !chestsort$filterMode) {
+        if (!ClientContainerContext.isChestOrBarrel()) {
             return;
         }
 
         int button = click.button();
-        if (button != 0) {
+        double mouseX = click.x();
+        double mouseY = click.y();
+
+        boolean showMainButtons = !chestsort$filterMode && !chestsort$importPopupOpen && !chestsort$exportPopupOpen && !chestsort$presetImportPopupOpen && !chestsort$presetExportPopupOpen;
+        if (showMainButtons && chestsort$lockSlotsMode && button == 0) {
+            Integer idx = chestsort$hoveredPlayerInventoryIndex((int) mouseX, (int) mouseY);
+            if (idx != null) {
+                ClientLockedSlotsState.toggleLocal(idx);
+                ClientPlayNetworking.send(new ToggleLockedSlotPayload(idx));
+                cir.setReturnValue(true);
+                cir.cancel();
+                return;
+            }
+        }
+
+        if (!chestsort$filterMode) {
             return;
         }
 
-        double mouseX = click.x();
-        double mouseY = click.y();
+        if (button != 0) {
+            return;
+        }
 
         chestsort$updateLayout();
         int rightW = chestsort$rightPanelW;
@@ -1278,6 +1546,8 @@ public abstract class HandledScreenMixin {
         int leftW = chestsort$leftPanelW;
         int leftX = chestsort$leftPanelX;
         int leftY = chestsort$leftPanelY;
+        int leftHeaderH = CHESTSORT_HEADER_H;
+        int leftRowsY = leftY + leftHeaderH;
 
         // Left: filter items + tags sections
         int rowH = CHESTSORT_ROW_H;
@@ -1286,7 +1556,7 @@ public abstract class HandledScreenMixin {
             int shown = Math.min(chestsort$leftRowsShown, Math.max(0, rows.size() - chestsort$leftScroll));
             for (int i = 0; i < shown; i++) {
                 int rx1 = leftX;
-                int ry1 = leftY + i * rowH;
+                int ry1 = leftRowsY + i * rowH;
                 int rx2 = leftX + leftW;
                 int ry2 = ry1 + rowH;
                 if (mouseX >= rx1 && mouseX < rx2 && mouseY >= ry1 && mouseY < ry2) {
@@ -1305,6 +1575,12 @@ public abstract class HandledScreenMixin {
                     } else if (kind == CHESTSORT_LEFT_KIND_AUTOSORT) {
                         // Toggle autosort for this container.
                         chestsort$editingAutosort = !chestsort$editingAutosort;
+                        chestsort$filterDirty = true;
+                        chestsort$selectedLeftRowIndex = rowIndex;
+                        chestsort$clampScroll();
+                    } else if (kind == CHESTSORT_LEFT_KIND_PRIORITY) {
+                        // Toggle conflict priority when an item matches both lists.
+                        chestsort$editingWhitelistPriority = !chestsort$editingWhitelistPriority;
                         chestsort$filterDirty = true;
                         chestsort$selectedLeftRowIndex = rowIndex;
                         chestsort$clampScroll();
@@ -1562,7 +1838,8 @@ public abstract class HandledScreenMixin {
             int lx1 = chestsort$leftPanelX;
             int ly1 = chestsort$leftPanelY;
             int lx2 = lx1 + chestsort$leftPanelW;
-            int ly2 = ly1 + (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM;
+            int leftHeaderH = CHESTSORT_HEADER_H;
+            int ly2 = ly1 + leftHeaderH + (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM;
             if (mouseX >= lx1 && mouseX < lx2 && mouseY >= ly1 && mouseY < ly2) {
                 chestsort$leftScroll += delta;
                 handled = true;
@@ -1757,11 +2034,21 @@ public abstract class HandledScreenMixin {
                     if (chestsort$editPresetMode) {
                         chestsort$saveEditingFilter();
                         // Restore container filter context so we don't accidentally apply preset edits locally.
-                        var spec = ClientContainerContext.filterSpec();
-                        chestsort$editingFilterItems = new java.util.ArrayList<>(spec == null ? java.util.List.of() : spec.items());
-                        chestsort$editingFilterTags = new java.util.ArrayList<>(spec == null ? java.util.List.of() : spec.tags());
-                        chestsort$editingFilterPresets = new java.util.ArrayList<>(spec == null ? java.util.List.of() : (spec.presets() == null ? java.util.List.of() : spec.presets()));
-                        chestsort$editingAutosort = spec != null && spec.autosort();
+                        var wl = ClientContainerContext.filterSpec();
+                        var bl = ClientContainerContext.blacklistSpec();
+
+                        chestsort$editingWhitelistItems = new java.util.ArrayList<>(wl == null ? java.util.List.of() : wl.items());
+                        chestsort$editingWhitelistTags = new java.util.ArrayList<>(wl == null ? java.util.List.of() : wl.tags());
+                        chestsort$editingWhitelistPresets = new java.util.ArrayList<>(wl == null ? java.util.List.of() : (wl.presets() == null ? java.util.List.of() : wl.presets()));
+
+                        chestsort$editingBlacklistItems = new java.util.ArrayList<>(bl == null ? java.util.List.of() : bl.items());
+                        chestsort$editingBlacklistTags = new java.util.ArrayList<>(bl == null ? java.util.List.of() : bl.tags());
+                        chestsort$editingBlacklistPresets = new java.util.ArrayList<>(bl == null ? java.util.List.of() : (bl.presets() == null ? java.util.List.of() : bl.presets()));
+
+                        chestsort$editingWhitelistPriority = ClientContainerContext.whitelistPriority();
+                        chestsort$editingAutosort = wl != null && wl.autosort();
+                        chestsort$filterTab = CHESTSORT_TAB_WHITELIST;
+                        chestsort$applyActiveTabToEditingLists();
                         chestsort$filterDirty = false;
                     } else {
                         // Local preset edit: save to container filter.
@@ -1905,7 +2192,7 @@ public abstract class HandledScreenMixin {
                     if (chestsort$importError != null && !chestsort$importError.isEmpty()) {
                         context.drawTextWithShadow(tr, Text.literal(chestsort$importError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2: string"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
@@ -1927,7 +2214,7 @@ public abstract class HandledScreenMixin {
                     if (chestsort$presetImportError != null && !chestsort$presetImportError.isEmpty()) {
                         context.drawTextWithShadow(tr, Text.literal(chestsort$presetImportError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2: string"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
@@ -1987,8 +2274,9 @@ public abstract class HandledScreenMixin {
                     int leftW = chestsort$leftPanelW;
                     int leftX = chestsort$leftPanelX;
                     int leftY = chestsort$leftPanelY;
+                    int leftHeaderH = CHESTSORT_HEADER_H;
                     if (leftW >= 20) {
-                        int leftPanelH = (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM;
+                        int leftPanelH = leftHeaderH + (chestsort$leftRowsShown * CHESTSORT_ROW_H) + CHESTSORT_PAD_BOTTOM;
                         context.fill(leftX, leftY, leftX + leftW, leftY + leftPanelH, 0xAA000000);
                     }
 
@@ -2000,10 +2288,11 @@ public abstract class HandledScreenMixin {
                         int textX = leftX + 28;
                         int textW = Math.max(0, actionX1 - textX - 4);
                         final float leftTextScale = 0.90f;
+                        int rowsY = leftY + leftHeaderH;
 
                         for (int i = 0; i < chestsort$leftRowsShown; i++) {
                             int rowIndex = chestsort$leftScroll + i;
-                            int ry1 = leftY + i * rowH;
+                            int ry1 = rowsY + i * rowH;
                             int bg = (rowIndex == chestsort$selectedLeftRowIndex) ? 0xFF404040 : 0xFF202020;
                             context.fill(leftX + 6, ry1, leftX + leftW - 6, ry1 + rowH - 1, bg);
 
@@ -2022,6 +2311,9 @@ public abstract class HandledScreenMixin {
                                 context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_AUTOSORT) {
                                 String label = "Autosort: " + (chestsort$editingAutosort ? "ON" : "OFF");
+                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                            } else if (kind == CHESTSORT_LEFT_KIND_PRIORITY) {
+                                String label = "Priority: " + (chestsort$editingWhitelistPriority ? "Whitelist" : "Blacklist");
                                 context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_TAGS_HEADER) {
                                 String chevron = chestsort$tagsExpanded ? "v " : "> ";
@@ -2348,6 +2640,64 @@ public abstract class HandledScreenMixin {
         context.drawTextWithShadow(textRenderer, text, 8, 8, 0xFFFFFFFF);
     }
 
+    @Inject(method = "render", at = @At("TAIL"))
+    @SuppressWarnings("unused")
+    private void chestsort$renderLockedSlots(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+        if (!ClientContainerContext.isChestOrBarrel()) return;
+
+        var client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) return;
+
+        try {
+            var inv = client.player.getInventory();
+            if (handler != null && handler.slots != null) {
+                for (var slot : handler.slots) {
+                    if (slot == null) continue;
+                    if (slot.inventory != inv) continue;
+
+                    int idx = slot.getIndex();
+                    if (!ClientLockedSlotsState.isLocked(idx)) continue;
+
+                    int sx = this.x + slot.x;
+                    int sy = this.y + slot.y;
+                    // Dim + border to show "protected".
+                    context.fill(sx, sy, sx + 16, sy + 16, 0x44000000);
+                    context.fill(sx, sy, sx + 16, sy + 1, 0xCC888888);
+                    context.fill(sx, sy + 15, sx + 16, sy + 16, 0xCC888888);
+                    context.fill(sx, sy, sx + 1, sy + 16, 0xCC888888);
+                    context.fill(sx + 15, sy, sx + 16, sy + 16, 0xCC888888);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    @Unique
+    private Integer chestsort$hoveredPlayerInventoryIndex(int mouseX, int mouseY) {
+        if (mouseX < 0 || mouseY < 0) return null;
+
+        var client = MinecraftClient.getInstance();
+        if (client == null || client.player == null) return null;
+
+        try {
+            var inv = client.player.getInventory();
+            if (handler == null || handler.slots == null) return null;
+
+            for (var slot : handler.slots) {
+                if (slot == null) continue;
+                if (slot.inventory != inv) continue;
+
+                int sx = this.x + slot.x;
+                int sy = this.y + slot.y;
+                if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
+                    return slot.getIndex();
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
     @Unique
     private java.util.List<Integer> chestsort$getLeftRows() {
         chestsort$ensureState();
@@ -2355,6 +2705,7 @@ public abstract class HandledScreenMixin {
         // Autosort is a per-container setting, not a preset setting.
         if (chestsort$editingPresetName == null || chestsort$editingPresetName.isEmpty()) {
             rows.add(chestsort$leftRowEncode(CHESTSORT_LEFT_KIND_AUTOSORT, -1));
+            rows.add(chestsort$leftRowEncode(CHESTSORT_LEFT_KIND_PRIORITY, -1));
         }
         rows.add(chestsort$leftRowEncode(CHESTSORT_LEFT_KIND_ITEMS_HEADER, -1));
         if (chestsort$itemsExpanded) {

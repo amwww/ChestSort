@@ -3,7 +3,7 @@ package dev.dromer.chestsort.client.gui;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
-import dev.dromer.chestsort.net.payload.SetPresetPayload;
+import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
@@ -39,8 +39,17 @@ public final class PresetEditorScreen extends Screen {
 
     private final String presetName;
 
+    private static final int TAB_WHITELIST = 0;
+    private static final int TAB_BLACKLIST = 1;
+    private int chestsort$tab = TAB_WHITELIST;
+
     private ArrayList<String> editingItems = new ArrayList<>();
     private ArrayList<TagFilterSpec> editingTags = new ArrayList<>();
+
+    private ArrayList<String> chestsort$whitelistItems = new ArrayList<>();
+    private ArrayList<TagFilterSpec> chestsort$whitelistTags = new ArrayList<>();
+    private ArrayList<String> chestsort$blacklistItems = new ArrayList<>();
+    private ArrayList<TagFilterSpec> chestsort$blacklistTags = new ArrayList<>();
 
     private boolean tagBrowserMode = false;
     private String tagBrowserTagId = "";
@@ -136,16 +145,26 @@ public final class PresetEditorScreen extends Screen {
 
     private void loadPresetSpec() {
         if (this.presetName.isEmpty()) {
-            this.editingItems = new ArrayList<>();
-            this.editingTags = new ArrayList<>();
+            this.chestsort$whitelistItems = new ArrayList<>();
+            this.chestsort$whitelistTags = new ArrayList<>();
+            this.chestsort$blacklistItems = new ArrayList<>();
+            this.chestsort$blacklistTags = new ArrayList<>();
+            chestsort$applyTab(TAB_WHITELIST);
             return;
         }
 
-        ContainerFilterSpec spec = ClientPresetRegistry.get(this.presetName);
-        ContainerFilterSpec safe = (spec == null) ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec.normalized();
+        ContainerFilterSpec wl = ClientPresetRegistry.get(this.presetName);
+        ContainerFilterSpec bl = ClientPresetRegistry.getBlacklist(this.presetName);
 
-        this.editingItems = new ArrayList<>(safe.items() == null ? List.of() : safe.items());
-        this.editingTags = new ArrayList<>(safe.tags() == null ? List.of() : safe.tags());
+        ContainerFilterSpec safeWl = (wl == null) ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : wl.normalized();
+        ContainerFilterSpec safeBl = (bl == null) ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : bl.normalized();
+
+        this.chestsort$whitelistItems = new ArrayList<>(safeWl.items() == null ? List.of() : safeWl.items());
+        this.chestsort$whitelistTags = new ArrayList<>(safeWl.tags() == null ? List.of() : safeWl.tags());
+        this.chestsort$blacklistItems = new ArrayList<>(safeBl.items() == null ? List.of() : safeBl.items());
+        this.chestsort$blacklistTags = new ArrayList<>(safeBl.tags() == null ? List.of() : safeBl.tags());
+
+        chestsort$applyTab(this.chestsort$tab);
 
         this.tagBrowserMode = false;
         this.tagBrowserTagId = "";
@@ -153,17 +172,48 @@ public final class PresetEditorScreen extends Screen {
         this.tagItemsCache.clear();
     }
 
+    private void chestsort$applyTab(int tab) {
+        this.chestsort$tab = (tab == TAB_BLACKLIST) ? TAB_BLACKLIST : TAB_WHITELIST;
+        if (this.chestsort$tab == TAB_BLACKLIST) {
+            this.editingItems = this.chestsort$blacklistItems;
+            this.editingTags = this.chestsort$blacklistTags;
+        } else {
+            this.editingItems = this.chestsort$whitelistItems;
+            this.editingTags = this.chestsort$whitelistTags;
+        }
+
+        this.leftScroll = 0;
+        this.resultsScroll = 0;
+
+        if (this.tagBrowserMode) {
+            this.tagBrowserMode = false;
+            this.tagBrowserTagId = "";
+            this.tagBrowserItems = List.of();
+        }
+        if (this.searchField != null) {
+            this.searchField.setText("");
+        }
+        updateSearchResults();
+    }
+
     private void saveToServer() {
         if (this.presetName.isEmpty()) return;
 
-        ContainerFilterSpec spec = new ContainerFilterSpec(
-            ContainerFilterSpec.normalizeStrings(this.editingItems),
-            this.editingTags,
+        ContainerFilterSpec wl = new ContainerFilterSpec(
+            ContainerFilterSpec.normalizeStrings(this.chestsort$whitelistItems),
+            this.chestsort$whitelistTags,
             List.of()
         ).normalized();
 
-        ClientPlayNetworking.send(new SetPresetPayload(this.presetName, spec));
-        ClientPresetRegistry.putLocal(this.presetName, spec);
+        ContainerFilterSpec bl = new ContainerFilterSpec(
+            ContainerFilterSpec.normalizeStrings(this.chestsort$blacklistItems),
+            this.chestsort$blacklistTags,
+            List.of()
+        ).normalized();
+
+        ClientPlayNetworking.send(new SetPresetV2Payload(this.presetName, wl, bl));
+        ClientPresetRegistry.putLocal(this.presetName, wl);
+        ClientPresetRegistry.putLocalBlacklist(this.presetName, bl);
     }
 
     private void ensureAllItems() {
@@ -411,6 +461,24 @@ public final class PresetEditorScreen extends Screen {
         int leftX = chestsort$leftX(panelW);
         int rightX = leftX + panelW + PANEL_GAP;
         int topY = Math.max(10, (this.height - PANEL_H) / 2);
+
+        // Tab row (left panel)
+        int tabY1 = topY + 24 + 24;
+        int tabY2 = tabY1 + HEADER_H;
+        if (mouseX >= leftX && mouseX < leftX + panelW && mouseY >= tabY1 && mouseY < tabY2) {
+            int half = panelW / 2;
+            if (mouseX < leftX + half) {
+                if (this.chestsort$tab != TAB_WHITELIST) {
+                    chestsort$applyTab(TAB_WHITELIST);
+                }
+                return true;
+            } else {
+                if (this.chestsort$tab != TAB_BLACKLIST) {
+                    chestsort$applyTab(TAB_BLACKLIST);
+                }
+                return true;
+            }
+        }
 
         int actionX1Left = (leftX + panelW) - ACTION_PAD - ACTION_W;
         int actionX2Left = (leftX + panelW) - ACTION_PAD;
@@ -759,6 +827,17 @@ public final class PresetEditorScreen extends Screen {
         // Right header
         String rightTitle = this.tagBrowserMode ? ("Tag: " + this.tagBrowserTagId) : "Results";
         context.drawTextWithShadow(tr, Text.literal(rightTitle), rightX + 6, topY + 6 + 24 + 24, 0xFFFFFFFF);
+
+        // Tabs (left header row)
+        int tabY1 = topY + 24 + 24;
+        int tabY2 = tabY1 + HEADER_H;
+        int half = panelW / 2;
+        int wlColor = (this.chestsort$tab == TAB_WHITELIST) ? 0xFF303030 : 0xFF202020;
+        int blColor = (this.chestsort$tab == TAB_BLACKLIST) ? 0xFF303030 : 0xFF202020;
+        context.fill(leftX, tabY1, leftX + half, tabY2, wlColor);
+        context.fill(leftX + half, tabY1, leftX + panelW, tabY2, blColor);
+        context.drawTextWithShadow(tr, Text.literal("Whitelist"), leftX + 8, tabY1 + 4, 0xFFFFFFFF);
+        context.drawTextWithShadow(tr, Text.literal("Blacklist"), leftX + half + 8, tabY1 + 4, 0xFFFFFFFF);
 
         int rowsY = topY + 24 + 24 + HEADER_H;
         int shownLeft = getLeftRowsShown();

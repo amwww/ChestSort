@@ -4,4 +4,6 @@
 /build/classes/java/client/
 /build/classes/java/main/
 
+!/build/libs/*
+
 /run/

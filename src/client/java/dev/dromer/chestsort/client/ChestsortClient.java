@@ -2,10 +2,13 @@ package dev.dromer.chestsort.client;
 
 import dev.dromer.chestsort.net.payload.ContainerContextPayload;
 import dev.dromer.chestsort.net.payload.ContainerContextV2Payload;
+import dev.dromer.chestsort.net.payload.ContainerContextV3Payload;
 import dev.dromer.chestsort.net.payload.ContainerHighlightPayload;
 import dev.dromer.chestsort.net.payload.FindHighlightsPayload;
+import dev.dromer.chestsort.net.payload.LockedSlotsSyncPayload;
 import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
 import dev.dromer.chestsort.net.payload.PresetSyncPayload;
+import dev.dromer.chestsort.net.payload.PresetSyncV2Payload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
 import dev.dromer.chestsort.net.payload.WandSelectionPayload;
 import net.fabricmc.api.ClientModInitializer;
@@ -31,8 +34,23 @@ public class ChestsortClient implements ClientModInitializer {
             context.client().execute(() -> ClientContainerContext.set(payload.dimensionId(), payload.posLong(), payload.containerType(), payload.filter()));
         });
 
+        ClientPlayNetworking.registerGlobalReceiver(ContainerContextV3Payload.ID, (payload, context) -> {
+            context.client().execute(() -> ClientContainerContext.set(
+                payload.dimensionId(),
+                payload.posLong(),
+                payload.containerType(),
+                payload.whitelist(),
+                payload.blacklist(),
+                payload.whitelistPriority()
+            ));
+        });
+
         ClientPlayNetworking.registerGlobalReceiver(PresetSyncPayload.ID, (payload, context) -> {
             context.client().execute(() -> ClientPresetRegistry.setFromSync(payload.names(), payload.specs()));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(PresetSyncV2Payload.ID, (payload, context) -> {
+            context.client().execute(() -> ClientPresetRegistry.setFromSyncV2(payload.names(), payload.whitelists(), payload.blacklists()));
         });
 
         ClientPlayNetworking.registerGlobalReceiver(OpenPresetUiPayload.ID, (payload, context) -> {
@@ -57,6 +75,19 @@ public class ChestsortClient implements ClientModInitializer {
                         dev.dromer.chestsort.client.gui.PresetTransferScreen.Mode.EXPORT,
                         name
                     ));
+                    return;
+                }
+
+                if (mode == OpenPresetUiPayload.MODE_EXPORT_ALL) {
+                    client.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
+                        dev.dromer.chestsort.client.gui.PresetTransferScreen.Mode.EXPORT_ALL,
+                        ""
+                    ));
+                    return;
+                }
+
+                if (mode == OpenPresetUiPayload.MODE_EXPORT_SELECT) {
+                    client.setScreen(dev.dromer.chestsort.client.gui.PresetListTransferScreen.forExportSelect());
                     return;
                 }
 
@@ -85,6 +116,10 @@ public class ChestsortClient implements ClientModInitializer {
                 payload.blockCount(),
                 payload.containerCount()
             ));
+        });
+
+        ClientPlayNetworking.registerGlobalReceiver(LockedSlotsSyncPayload.ID, (payload, context) -> {
+            context.client().execute(() -> ClientLockedSlotsState.setFromSync(payload.lockedSlots()));
         });
     }
 }

@@ -11,6 +11,7 @@ import java.util.Map;
 
 public final class ClientPresetRegistry {
     private static final Map<String, ContainerFilterSpec> presetsByName = new HashMap<>();
+    private static final Map<String, ContainerFilterSpec> presetBlacklistsByName = new HashMap<>();
 
     private static volatile byte pendingOpenMode = -1;
     private static volatile String pendingOpenName = "";
@@ -20,6 +21,7 @@ public final class ClientPresetRegistry {
 
     public static void setFromSync(List<String> names, List<ContainerFilterSpec> specs) {
         presetsByName.clear();
+        presetBlacklistsByName.clear();
         if (names == null || specs == null) return;
         int n = Math.min(names.size(), specs.size());
         for (int i = 0; i < n; i++) {
@@ -32,8 +34,30 @@ public final class ClientPresetRegistry {
         }
     }
 
+    public static void setFromSyncV2(List<String> names, List<ContainerFilterSpec> whitelists, List<ContainerFilterSpec> blacklists) {
+        presetsByName.clear();
+        presetBlacklistsByName.clear();
+        if (names == null || whitelists == null || blacklists == null) return;
+        int n = Math.min(names.size(), Math.min(whitelists.size(), blacklists.size()));
+        for (int i = 0; i < n; i++) {
+            String name = names.get(i);
+            if (name == null) continue;
+            String trimmed = name.trim();
+            if (trimmed.isEmpty()) continue;
+
+            ContainerFilterSpec wl = whitelists.get(i);
+            ContainerFilterSpec bl = blacklists.get(i);
+            presetsByName.put(trimmed, (wl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : wl).normalized());
+            presetBlacklistsByName.put(trimmed, (bl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : bl).normalized());
+        }
+    }
+
     public static Map<String, ContainerFilterSpec> all() {
         return Map.copyOf(presetsByName);
+    }
+
+    public static Map<String, ContainerFilterSpec> allBlacklists() {
+        return Map.copyOf(presetBlacklistsByName);
     }
 
     public static List<String> namesSorted() {
@@ -47,6 +71,11 @@ public final class ClientPresetRegistry {
         return presetsByName.get(name.trim());
     }
 
+    public static ContainerFilterSpec getBlacklist(String name) {
+        if (name == null) return null;
+        return presetBlacklistsByName.get(name.trim());
+    }
+
     public static void putLocal(String name, ContainerFilterSpec spec) {
         if (name == null) return;
         String n = name.trim();
@@ -54,9 +83,18 @@ public final class ClientPresetRegistry {
         presetsByName.put(n, (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized());
     }
 
+    public static void putLocalBlacklist(String name, ContainerFilterSpec spec) {
+        if (name == null) return;
+        String n = name.trim();
+        if (n.isEmpty()) return;
+        presetBlacklistsByName.put(n, (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized());
+    }
+
     public static void removeLocal(String name) {
         if (name == null) return;
-        presetsByName.remove(name.trim());
+        String n = name.trim();
+        presetsByName.remove(n);
+        presetBlacklistsByName.remove(n);
     }
 
     public static void requestOpen(byte mode, String name) {

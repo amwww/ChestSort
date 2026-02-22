@@ -6,7 +6,7 @@ import net.minecraft.network.codec.PacketCodec;
 import net.minecraft.network.packet.CustomPayload;
 import net.minecraft.util.Identifier;
 
-/** Client -> Server: import a preset from a cs2: export string (server will create a new preset). */
+/** Client -> Server: import a preset from a cs2 export string (must be a named preset like `cs2|preset/<name>|...`). */
 public record ImportPresetPayload(String data) implements CustomPayload {
     public static final Id<ImportPresetPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "import_preset"));
 

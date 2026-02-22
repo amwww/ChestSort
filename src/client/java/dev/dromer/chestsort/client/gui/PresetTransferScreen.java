@@ -1,16 +1,9 @@
 package dev.dromer.chestsort.client.gui;
 
-import java.nio.charset.StandardCharsets;
-import dev.dromer.chestsort.util.Cs2StringCodec;
-import java.util.Base64;
-
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
-import com.mojang.serialization.JsonOps;
-
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
+import dev.dromer.chestsort.util.Cs2StringCodec;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
@@ -21,13 +14,16 @@ import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
 
+import java.util.List;
+
 public final class PresetTransferScreen extends Screen {
     public enum Mode {
         IMPORT,
-        EXPORT
+        EXPORT,
+        EXPORT_ALL
     }
 
-    private static final String PREFIX = "cs2:";
+    private static final String PREFIX = "cs2|";
 
     private final Mode mode;
     private final String exportPresetName;
@@ -42,7 +38,7 @@ public final class PresetTransferScreen extends Screen {
     }
 
     public PresetTransferScreen(Mode mode, String presetName) {
-        super(Text.literal(mode == Mode.IMPORT ? "Import preset" : "Export preset"));
+        super(Text.literal(mode == Mode.IMPORT ? "Import preset" : (mode == Mode.EXPORT_ALL ? "Export all presets" : "Export preset")));
         this.mode = mode == null ? Mode.IMPORT : mode;
         this.exportPresetName = presetName == null ? "" : presetName.trim();
     }
@@ -76,7 +72,7 @@ public final class PresetTransferScreen extends Screen {
             this.field.setEditable(false);
             this.field.setFocused(true);
 
-            // Computing + base64 encoding can be expensive for large presets; do it off-thread.
+            // Computing exports can be expensive for large presets; do it off-thread.
             this.field.setText("Loading...");
 
             Thread t = new Thread(() -> {
@@ -114,20 +110,72 @@ public final class PresetTransferScreen extends Screen {
             this.error = "empty";
             return;
         }
+
+        // If this is a presetList, offer a selection + rename UI.
+        try {
+            var decoded = Cs2StringCodec.decodePresetList(raw);
+            if (decoded != null && decoded.whitelists() != null && !decoded.whitelists().isEmpty()) {
+                MinecraftClient.getInstance().setScreen(PresetListTransferScreen.forImportList(raw));
+                return;
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Not a presetList; fall through to single preset import.
+        }
+
         ClientPlayNetworking.send(new ImportPresetPayload(raw));
         this.close();
     }
 
     private ComputeResult computeExport() {
+        if (this.mode == Mode.EXPORT_ALL) {
+            try {
+                var allWl = ClientPresetRegistry.all();
+                var allBl = ClientPresetRegistry.allBlacklists();
+                if ((allWl == null || allWl.isEmpty()) && (allBl == null || allBl.isEmpty())) {
+                    return new ComputeResult("", "No presets");
+                }
+
+                java.util.LinkedHashMap<String, ContainerFilterSpec> orderedWl = new java.util.LinkedHashMap<>();
+                java.util.LinkedHashMap<String, ContainerFilterSpec> orderedBl = new java.util.LinkedHashMap<>();
+                for (String name : ClientPresetRegistry.namesSorted()) {
+                    if (name == null) continue;
+                    String n = name.trim();
+                    if (n.isEmpty()) continue;
+
+                    ContainerFilterSpec wl = allWl == null ? null : allWl.get(n);
+                    ContainerFilterSpec bl = allBl == null ? null : allBl.get(n);
+                    if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) continue;
+
+                    orderedWl.put(n, wl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : wl);
+                    if (bl != null && !bl.isEmpty()) {
+                        orderedBl.put(n, bl);
+                    }
+                }
+
+                if (orderedWl.isEmpty()) {
+                    return new ComputeResult("", "No presets");
+                }
+
+                return new ComputeResult(Cs2StringCodec.encodePresetList(orderedWl, orderedBl), "");
+            } catch (Throwable t) {
+                String msg = t.getMessage();
+                if (msg == null || msg.isEmpty()) msg = t.getClass().getSimpleName();
+                return new ComputeResult("", msg);
+            }
+        }
+
         if (this.exportPresetName.isEmpty()) {
             return new ComputeResult("", "No preset name");
         }
         try {
-            ContainerFilterSpec spec = ClientPresetRegistry.get(this.exportPresetName);
-            if (spec == null || spec.isEmpty()) {
+            ContainerFilterSpec wl = ClientPresetRegistry.get(this.exportPresetName);
+            ContainerFilterSpec bl = ClientPresetRegistry.getBlacklist(this.exportPresetName);
+            if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) {
                 return new ComputeResult("", "No preset / empty");
             }
-            return new ComputeResult(encode(this.exportPresetName, spec), "");
+            ContainerFilterSpec safeWl = wl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : wl;
+            ContainerFilterSpec safeBl = bl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : bl;
+            return new ComputeResult(encode(this.exportPresetName, safeWl, safeBl), "");
         } catch (Throwable t) {
             String msg = t.getMessage();
             if (msg == null || msg.isEmpty()) msg = t.getClass().getSimpleName();
@@ -135,9 +183,9 @@ public final class PresetTransferScreen extends Screen {
         }
     }
 
-    private static String encode(String presetName, ContainerFilterSpec spec) {
+    private static String encode(String presetName, ContainerFilterSpec whitelist, ContainerFilterSpec blacklist) {
         // Keep PREFIX constant for UI text, but use the shared codec.
-        return Cs2StringCodec.encodePreset(presetName, spec);
+        return Cs2StringCodec.encodePreset(presetName, whitelist, blacklist);
     }
 
     @SuppressWarnings("unused")
@@ -181,12 +229,14 @@ public final class PresetTransferScreen extends Screen {
 
         String title = this.mode == Mode.IMPORT
             ? "Import preset"
-            : (this.exportPresetName.isEmpty() ? "Export preset" : ("Export preset: " + this.exportPresetName));
+            : (this.mode == Mode.EXPORT_ALL
+                ? "Export all presets"
+                : (this.exportPresetName.isEmpty() ? "Export preset" : ("Export preset: " + this.exportPresetName)));
 
         context.drawTextWithShadow(this.textRenderer, Text.literal(title), x, y - 2, 0xFFFFFFFF);
 
         if (this.mode == Mode.IMPORT) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Paste a cs2: string"), x, y + 12, 0xFFAAAAAA);
+            context.drawTextWithShadow(this.textRenderer, Text.literal("Paste cs2|preset/<name>| or cs2|presetList|"), x, y + 12, 0xFFAAAAAA);
         } else {
             context.drawTextWithShadow(this.textRenderer, Text.literal("Select + copy from box"), x, y + 12, 0xFFAAAAAA);
         }

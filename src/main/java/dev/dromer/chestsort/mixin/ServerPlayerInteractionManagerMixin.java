@@ -9,6 +9,7 @@ import dev.dromer.chestsort.data.ChestSortState;
 import dev.dromer.chestsort.net.ChestSortNetworking;
 import dev.dromer.chestsort.net.payload.ContainerContextPayload;
 import dev.dromer.chestsort.net.payload.ContainerContextV2Payload;
+import dev.dromer.chestsort.net.payload.ContainerContextV3Payload;
 import dev.dromer.chestsort.net.payload.ContainerHighlightPayload;
 import dev.dromer.chestsort.net.payload.FindHighlightsPayload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
@@ -128,13 +129,20 @@ public class ServerPlayerInteractionManagerMixin {
         // Update client-side context (used for filter editing + sort button).
         String dimId = serverWorld.getRegistryKey().getValue().toString();
         var spec = state.getFilterSpec(dimId, canonicalPosLong);
+        var blacklist = state.getBlacklistSpec(dimId, canonicalPosLong);
+        boolean whitelistPriority = state.whitelistPriority(dimId, canonicalPosLong);
         // Keep legacy payload for older clients (items only).
         ServerPlayNetworking.send(player, new ContainerContextPayload(dimId, canonicalPosLong, containerType, spec.items()));
         // v2 payload for newer clients (items + tags).
         ServerPlayNetworking.send(player, new ContainerContextV2Payload(dimId, canonicalPosLong, containerType, spec));
+        // v3 payload includes container blacklist + priority.
+        ServerPlayNetworking.send(player, new ContainerContextV3Payload(dimId, canonicalPosLong, containerType, spec, blacklist, whitelistPriority));
 
         // Presets sync for the filter UI.
         ChestSortNetworking.sendPresetsTo(player);
+
+        // Locked player slots for "protected slots" feature.
+        ChestSortNetworking.sendLockedSlotsTo(player);
 
         String playerUuid = player.getUuidAsString();
         String highlightsMode = state.getHighlightsMode(playerUuid);
@@ -202,6 +210,10 @@ public class ServerPlayerInteractionManagerMixin {
         var effective = state.resolveWithAppliedPresets(filter);
         if (effective == null || effective.isEmpty()) return;
 
+        var blacklist = state.getBlacklistSpec(dimId, canonicalPosLong);
+        var effectiveBlacklist = blacklist == null ? new dev.dromer.chestsort.filter.ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : state.resolveBlacklistWithAppliedPresets(blacklist);
+        boolean whitelistPriority = state.whitelistPriority(dimId, canonicalPosLong);
+
         Inventory containerInv = handler.getInventory();
         ChestSortNetworking.SortOperationResult result2 = ChestSortNetworking.sortMatchingIntoDetailed(
             state,
@@ -211,7 +223,10 @@ public class ServerPlayerInteractionManagerMixin {
             player.getInventory(),
             containerInv,
             filter,
-            effective
+            effective,
+            blacklist,
+            effectiveBlacklist,
+            whitelistPriority
         );
         int moved = result2 == null ? 0 : result2.movedTotal();
         if (moved > 0) {

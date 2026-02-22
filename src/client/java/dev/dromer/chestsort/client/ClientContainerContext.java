@@ -12,6 +12,8 @@ public final class ClientContainerContext {
     private static String containerType = "";
     private static List<String> filterItems = List.of();
     private static ContainerFilterSpec filterSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+    private static ContainerFilterSpec blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+    private static boolean whitelistPriority = true;
 
     private ClientContainerContext() {
     }
@@ -39,14 +41,35 @@ public final class ClientContainerContext {
             ).normalized();
         } else {
             filterSpec = ContainerFilterSpec.fromLegacyItems(filterItems).normalized();
+            blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of()).normalized();
+            whitelistPriority = true;
         }
     }
 
     public static void set(String dimId, long pos, String type, ContainerFilterSpec spec) {
+        String newDim = dimId == null ? "" : dimId;
+        String newType = type == null ? "" : type;
+        boolean sameKey = newDim.equals(dimensionId) && pos == posLong && newType.equals(containerType);
+
+        dimensionId = newDim;
+        posLong = pos;
+        containerType = newType;
+        filterSpec = (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized();
+        filterItems = Collections.unmodifiableList(new ArrayList<>(filterSpec.items()));
+
+        if (!sameKey) {
+            blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of()).normalized();
+            whitelistPriority = true;
+        }
+    }
+
+    public static void set(String dimId, long pos, String type, ContainerFilterSpec whitelist, ContainerFilterSpec blacklist, boolean whitelistPriority) {
         dimensionId = dimId == null ? "" : dimId;
         posLong = pos;
         containerType = type == null ? "" : type;
-        filterSpec = (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized();
+        filterSpec = (whitelist == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : whitelist).normalized();
+        blacklistSpec = (blacklist == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : blacklist).normalized();
+        ClientContainerContext.whitelistPriority = whitelistPriority;
         filterItems = Collections.unmodifiableList(new ArrayList<>(filterSpec.items()));
     }
 
@@ -56,6 +79,8 @@ public final class ClientContainerContext {
         containerType = "";
         filterItems = List.of();
         filterSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        whitelistPriority = true;
     }
 
     public static boolean isChestOrBarrel() {
@@ -80,6 +105,14 @@ public final class ClientContainerContext {
 
     public static ContainerFilterSpec filterSpec() {
         return filterSpec;
+    }
+
+    public static ContainerFilterSpec blacklistSpec() {
+        return blacklistSpec;
+    }
+
+    public static boolean whitelistPriority() {
+        return whitelistPriority;
     }
 
     public static boolean hasFilter() {

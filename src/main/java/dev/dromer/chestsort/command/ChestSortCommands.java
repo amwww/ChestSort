@@ -1,42 +1,51 @@
 package dev.dromer.chestsort.command;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
+
 import dev.dromer.chestsort.data.ChestSortState;
 import dev.dromer.chestsort.data.ContainerSnapshot;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
-import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
+import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.FindHighlightsPayload;
+import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
 import dev.dromer.chestsort.net.payload.WandSelectionPayload;
 import dev.dromer.chestsort.util.ContainerCanonicalizer;
 import dev.dromer.chestsort.util.WandSelectionUtil;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+import net.minecraft.command.CommandSource;
 import net.minecraft.command.CommandRegistryAccess;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.command.argument.ItemStackArgumentType;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
+import net.minecraft.registry.RegistryKeys;
+import net.minecraft.registry.tag.TagKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
 import net.minecraft.util.Formatting;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.hit.HitResult;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.server.world.ServerWorld;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.concurrent.CompletableFuture;
 
 public final class ChestSortCommands {
     private ChestSortCommands() {
@@ -73,30 +82,71 @@ public final class ChestSortCommands {
             .then(CommandManager.literal("tags")
                 .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
                     .executes(ctx -> tags(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
+            .then(CommandManager.literal("blacklist")
+                .then(CommandManager.literal("list")
+                    .executes(ctx -> blacklistList(ctx.getSource())))
+                .then(CommandManager.literal("clear")
+                    .executes(ctx -> blacklistClear(ctx.getSource())))
+                .then(CommandManager.literal("add")
+                    .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
+                        .executes(ctx -> blacklistAdd(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
+                .then(CommandManager.literal("addPreset")
+                    .then(CommandManager.argument("name", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
+                        .then(CommandManager.argument("mode", StringArgumentType.word())
+                            .suggests((ctx, builder) -> {
+                                builder.suggest("blacklist");
+                                builder.suggest("whitelist");
+                                builder.suggest("everything");
+                                return builder.buildFuture();
+                            })
+                            .executes(ctx -> blacklistAddPreset(
+                                ctx.getSource(),
+                                StringArgumentType.getString(ctx, "name"),
+                                StringArgumentType.getString(ctx, "mode")
+                            )))))
+                .then(CommandManager.literal("remove")
+                    .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
+                        .executes(ctx -> blacklistRemove(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
+            )
             .then(CommandManager.literal("scan")
                 .executes(ctx -> scan(ctx.getSource())))
             .then(CommandManager.literal("find")
                 .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
                     .executes(ctx -> find(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
             .then(CommandManager.literal("presets")
+                .then(CommandManager.literal("list")
+                    .executes(ctx -> presetsList(ctx.getSource())))
                 .then(CommandManager.literal("add")
                     .then(CommandManager.argument("name", StringArgumentType.string())
                         .executes(ctx -> presetsAdd(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
+                .then(CommandManager.literal("duplicate")
+                    .then(CommandManager.argument("name", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
+                        .executes(ctx -> presetsDuplicate(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                 .then(CommandManager.literal("remove")
                     .then(CommandManager.argument("name", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsRemove(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                 .then(CommandManager.literal("rename")
                     .then(CommandManager.argument("old", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .then(CommandManager.argument("new", StringArgumentType.string())
                             .executes(ctx -> presetsRename(ctx.getSource(), StringArgumentType.getString(ctx, "old"), StringArgumentType.getString(ctx, "new"))))))
                 .then(CommandManager.literal("edit")
                     .then(CommandManager.argument("name", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsEdit(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                 .then(CommandManager.literal("import")
                     .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_IMPORT, "")))
                 .then(CommandManager.literal("export")
                     .then(CommandManager.argument("name", StringArgumentType.string())
+                        .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT, StringArgumentType.getString(ctx, "name")))))
+                .then(CommandManager.literal("exportSelect")
+                    .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT_SELECT, "")))
+                .then(CommandManager.literal("exportAll")
+                    .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT_ALL, "")))
             )
             .then(CommandManager.literal("wand")
                 .then(CommandManager.literal("bind")
@@ -128,7 +178,7 @@ public final class ChestSortCommands {
         );
     }
 
-    private static CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestLookBlock(ServerCommandSource source, SuggestionsBuilder builder) {
+    private static CompletableFuture<Suggestions> suggestLookBlock(ServerCommandSource source, SuggestionsBuilder builder) {
         ServerPlayerEntity player = source.getPlayer();
         if (player == null) return builder.buildFuture();
 
@@ -138,6 +188,12 @@ public final class ChestSortCommands {
             builder.suggest(pos.getX() + " " + pos.getY() + " " + pos.getZ());
         }
         return builder.buildFuture();
+    }
+
+    private static CompletableFuture<Suggestions> suggestPresetName(ServerCommandSource source, SuggestionsBuilder builder) {
+        if (source == null) return builder.buildFuture();
+        ChestSortState state = ChestSortState.get(source.getServer());
+        return CommandSource.suggestMatching(state.getPresets().keySet(), builder);
     }
 
     private static ServerWorld getWorldByDimId(MinecraftServer server, String dimId) {
@@ -535,10 +591,10 @@ public final class ChestSortCommands {
 
         source.sendFeedback(() -> Text.literal("Import / export presets:").formatted(Formatting.AQUA), false);
         source.sendFeedback(() -> Text.literal("- Export creates a ").formatted(Formatting.GRAY)
-            .append(Text.literal("cs2:").formatted(Formatting.YELLOW))
+            .append(Text.literal("cs2|").formatted(Formatting.YELLOW))
             .append(Text.literal(" string you can share.").formatted(Formatting.GRAY)), false);
         source.sendFeedback(() -> Text.literal("- Import takes a ").formatted(Formatting.GRAY)
-            .append(Text.literal("cs2:").formatted(Formatting.YELLOW))
+            .append(Text.literal("cs2|").formatted(Formatting.YELLOW))
             .append(Text.literal(" string and creates a new preset.").formatted(Formatting.GRAY)), false);
         source.sendFeedback(() -> Text.literal(""), false);
 
@@ -552,11 +608,15 @@ public final class ChestSortCommands {
             .append(Text.literal("/cs find <item>").formatted(Formatting.GREEN))
             .append(Text.literal("  (lists containers that contain an item)").formatted(Formatting.GRAY)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets add <name>").formatted(Formatting.GREEN)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets duplicate <name>").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets remove <name>").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets rename <old> <new>").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets edit <name>").formatted(Formatting.GREEN)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets list").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets import").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets export <name>").formatted(Formatting.GREEN)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets exportSelect").formatted(Formatting.GREEN)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets exportAll").formatted(Formatting.GREEN)), false);
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
             .append(Text.literal("/cs autosort ").formatted(Formatting.GREEN))
             .append(Text.literal("<never|selected|always>").formatted(Formatting.YELLOW)), false);
@@ -731,6 +791,54 @@ public final class ChestSortCommands {
         return 1;
     }
 
+    private static int presetsDuplicate(ServerCommandSource source, String name) {
+        MinecraftServer server = source.getServer();
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs presets must be run by a player"));
+            return 0;
+        }
+
+        String n = name == null ? "" : name.trim();
+        if (n.isEmpty()) {
+            source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+            return 0;
+        }
+
+        ChestSortState state = ChestSortState.get(server);
+        if (!state.hasPreset(n)) {
+            source.sendError(Text.literal("[CS] Preset not found: " + n));
+            return 0;
+        }
+
+        ContainerFilterSpec spec = state.getPresets().get(n);
+        if (spec == null) {
+            spec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        }
+
+        String base = n + " Copy";
+        String out = base;
+        if (state.hasPreset(out)) {
+            for (int i = 2; i < 10_000; i++) {
+                String candidate = base + " " + i;
+                if (!state.hasPreset(candidate)) {
+                    out = candidate;
+                    break;
+                }
+            }
+            if (state.hasPreset(out)) {
+                out = base + " " + System.currentTimeMillis();
+            }
+        }
+
+        state.setPreset(out, spec);
+        dev.dromer.chestsort.net.ChestSortNetworking.broadcastPresets(server);
+        dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
+        final String outName = out;
+        source.sendFeedback(() -> Text.literal("[CS] Duplicated preset: " + n + " -> " + outName), false);
+        return 1;
+    }
+
     private static int presetsRename(ServerCommandSource source, String oldName, String newName) {
         MinecraftServer server = source.getServer();
         String o = oldName == null ? "" : oldName.trim();
@@ -783,6 +891,37 @@ public final class ChestSortCommands {
         return 1;
     }
 
+    private static int presetsList(ServerCommandSource source) {
+        MinecraftServer server = source.getServer();
+        ChestSortState state = ChestSortState.get(server);
+
+        java.util.ArrayList<String> names = new java.util.ArrayList<>(state.getPresets().keySet());
+        names.sort(String.CASE_INSENSITIVE_ORDER);
+
+        int total = names.size();
+        if (total == 0) {
+            source.sendFeedback(() -> Text.literal("[CS] No presets."), false);
+            return 0;
+        }
+
+        source.sendFeedback(() -> Text.literal("[CS] Presets (" + total + "):").formatted(Formatting.AQUA), false);
+
+        int limit = 200;
+        for (int i = 0; i < names.size() && i < limit; i++) {
+            String n = names.get(i);
+            if (n == null || n.isEmpty()) continue;
+            source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
+                .append(Text.literal(n).formatted(Formatting.YELLOW)), false);
+        }
+
+        if (total > limit) {
+            int more = total - limit;
+            source.sendFeedback(() -> Text.literal("... and " + more + " more").formatted(Formatting.GRAY), false);
+        }
+
+        return total;
+    }
+
     private static int presetsOpenUi(ServerCommandSource source, byte mode, String name) {
         ServerPlayerEntity player = source.getPlayer();
         if (player == null) {
@@ -802,6 +941,19 @@ public final class ChestSortCommands {
                 source.sendError(Text.literal("[CS] Preset not found: " + n));
                 return 0;
             }
+
+            // Ensure the client has the latest preset definitions for exporting.
+            dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
+        }
+
+        if (mode == OpenPresetUiPayload.MODE_EXPORT_ALL) {
+            // Ensure the client has the latest preset definitions for exporting.
+            dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
+        }
+
+        if (mode == OpenPresetUiPayload.MODE_EXPORT_SELECT) {
+            // Ensure the client has the latest preset definitions for exporting.
+            dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
         }
 
         ServerPlayNetworking.send(player, new OpenPresetUiPayload(mode, name == null ? "" : name));
@@ -877,6 +1029,248 @@ public final class ChestSortCommands {
         }
 
         return matches.size();
+    }
+
+    private static int blacklistAdd(ServerCommandSource source, Item item) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist add must be run by a player"));
+            return 0;
+        }
+        if (item == null) {
+            source.sendError(Text.literal("[CS] Missing item"));
+            return 0;
+        }
+
+        String itemId = String.valueOf(Registries.ITEM.getId(item));
+        ChestSortState state = ChestSortState.get(source.getServer());
+        boolean changed = state.addItemToBlacklist(player.getUuidAsString(), itemId);
+        if (changed) {
+            source.sendFeedback(() -> Text.literal("[CS] Blacklisted: ").formatted(Formatting.GOLD)
+                .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+            return 1;
+        }
+
+        source.sendFeedback(() -> Text.literal("[CS] Already blacklisted: ").formatted(Formatting.GOLD)
+            .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+        return 0;
+    }
+
+    private static int blacklistRemove(ServerCommandSource source, Item item) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist remove must be run by a player"));
+            return 0;
+        }
+        if (item == null) {
+            source.sendError(Text.literal("[CS] Missing item"));
+            return 0;
+        }
+
+        String itemId = String.valueOf(Registries.ITEM.getId(item));
+        ChestSortState state = ChestSortState.get(source.getServer());
+        boolean changed = state.removeItemFromBlacklist(player.getUuidAsString(), itemId);
+        if (changed) {
+            source.sendFeedback(() -> Text.literal("[CS] Un-blacklisted: ").formatted(Formatting.GOLD)
+                .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+            return 1;
+        }
+
+        source.sendFeedback(() -> Text.literal("[CS] Not blacklisted: ").formatted(Formatting.GOLD)
+            .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+        return 0;
+    }
+
+    private static int blacklistList(ServerCommandSource source) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist list must be run by a player"));
+            return 0;
+        }
+
+        ChestSortState state = ChestSortState.get(source.getServer());
+        java.util.ArrayList<String> items = new java.util.ArrayList<>(state.getItemBlacklist(player.getUuidAsString()));
+        items.sort(java.util.Comparator.naturalOrder());
+
+        source.sendFeedback(() -> Text.literal("[CS] ").formatted(Formatting.GOLD)
+            .append(Text.literal("Blacklisted items: ").formatted(Formatting.YELLOW))
+            .append(Text.literal(String.valueOf(items.size())).formatted(Formatting.AQUA)), false);
+
+        if (items.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("- (none)").formatted(Formatting.GRAY), false);
+            return 1;
+        }
+
+        int shown = 0;
+        for (String itemId : items) {
+            if (itemId == null || itemId.isEmpty()) continue;
+            source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
+                .append(Text.literal(itemId).formatted(Formatting.WHITE)), false);
+            shown++;
+            if (shown >= 200) break;
+        }
+        return shown;
+    }
+
+    private static int blacklistClear(ServerCommandSource source) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist clear must be run by a player"));
+            return 0;
+        }
+
+        ChestSortState state = ChestSortState.get(source.getServer());
+        int removed = state.clearItemBlacklist(player.getUuidAsString());
+        source.sendFeedback(() -> Text.literal("[CS] Cleared blacklist: ").formatted(Formatting.GOLD)
+            .append(Text.literal(String.valueOf(removed)).formatted(Formatting.AQUA)), false);
+        return removed;
+    }
+
+    private static int blacklistAddPreset(ServerCommandSource source, String presetName, String modeRaw) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist addPreset must be run by a player"));
+            return 0;
+        }
+
+        String name = presetName == null ? "" : presetName.trim();
+        if (name.isEmpty()) {
+            source.sendError(Text.literal("[CS] Missing preset name"));
+            return 0;
+        }
+
+        String mode = modeRaw == null ? "" : modeRaw.trim().toLowerCase(Locale.ROOT);
+        if (mode.isEmpty()) mode = "everything";
+
+        final String nameFinal = name;
+        final String modeFinal = mode;
+
+        ChestSortState state = ChestSortState.get(source.getServer());
+        ContainerFilterSpec preset = state.getPreset(name);
+        if (preset == null) {
+            source.sendError(Text.literal("[CS] Preset not found: " + name));
+            return 0;
+        }
+
+        ContainerFilterSpec base = preset.normalized();
+
+        ContainerFilterSpec selected;
+        switch (mode) {
+            case "whitelist" -> selected = new ContainerFilterSpec(base.items(), base.tags(), List.of(), false).normalized();
+            case "blacklist" -> {
+                // "Blacklist part" of a preset is interpreted as items/tags contributed by its applied presets.
+                ContainerFilterSpec appliedOnly = new ContainerFilterSpec(List.of(), List.of(), base.presets(), false).normalized();
+                selected = state.resolveWithAppliedPresets(appliedOnly);
+            }
+            case "everything" -> selected = state.resolveWithAppliedPresets(base);
+            default -> {
+                source.sendError(Text.literal("[CS] Invalid mode: " + mode + " (use: blacklist|whitelist|everything)"));
+                return 0;
+            }
+        }
+
+        LinkedHashSet<String> itemIds = chestsort$collectItemIdsFromSpec(selected);
+        if (itemIds.isEmpty()) {
+            source.sendFeedback(() -> Text.literal("[CS] Preset \"" + nameFinal + "\" (" + modeFinal + ") contains no items to add."), false);
+            return 1;
+        }
+
+        int added = state.addItemsToBlacklist(player.getUuidAsString(), itemIds);
+        source.sendFeedback(() -> Text.literal("[CS] Added ").formatted(Formatting.GOLD)
+            .append(Text.literal(String.valueOf(added)).formatted(Formatting.AQUA))
+            .append(Text.literal(" item(s) from preset \"").formatted(Formatting.GOLD))
+            .append(Text.literal(nameFinal).formatted(Formatting.YELLOW))
+            .append(Text.literal("\" (" + modeFinal + ") to your blacklist.").formatted(Formatting.GOLD)), false);
+        return Math.max(1, added);
+    }
+
+    private static LinkedHashSet<String> chestsort$collectItemIdsFromSpec(ContainerFilterSpec spec) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        if (spec == null) return out;
+        ContainerFilterSpec s = spec.normalized();
+
+        if (s.items() != null) {
+            for (String raw : s.items()) {
+                Identifier id = chestsort$parseItemIdentifier(raw);
+                if (id == null) continue;
+                out.add(id.toString());
+            }
+        }
+
+        if (s.tags() != null) {
+            for (TagFilterSpec tf : s.tags()) {
+                if (tf == null) continue;
+                Identifier tagId = chestsort$parseTagIdentifier(tf.tagId());
+                if (tagId == null) continue;
+
+                HashSet<String> exc = chestsort$expandExceptionsToItemIds(tf.exceptions());
+                TagKey<Item> tagKey = TagKey.of(RegistryKeys.ITEM, tagId);
+                for (var entry : Registries.ITEM.iterateEntries(tagKey)) {
+                    if (entry == null || entry.value() == null) continue;
+                    String itemId = String.valueOf(Registries.ITEM.getId(entry.value()));
+                    if (itemId == null || itemId.isEmpty()) continue;
+                    if (exc.contains(itemId)) continue;
+                    out.add(itemId);
+                }
+            }
+        }
+
+        return out;
+    }
+
+    private static HashSet<String> chestsort$expandExceptionsToItemIds(List<String> exceptions) {
+        HashSet<String> out = new HashSet<>();
+        if (exceptions == null || exceptions.isEmpty()) return out;
+
+        for (String raw : exceptions) {
+            if (raw == null) continue;
+            String t = raw.trim();
+            if (t.isEmpty()) continue;
+
+            if (t.startsWith("#")) {
+                Identifier tagId = chestsort$parseTagIdentifier(t);
+                if (tagId == null) continue;
+                TagKey<Item> tagKey = TagKey.of(RegistryKeys.ITEM, tagId);
+                for (var entry : Registries.ITEM.iterateEntries(tagKey)) {
+                    if (entry == null || entry.value() == null) continue;
+                    String itemId = String.valueOf(Registries.ITEM.getId(entry.value()));
+                    if (itemId == null || itemId.isEmpty()) continue;
+                    out.add(itemId);
+                }
+            } else {
+                Identifier id = chestsort$parseItemIdentifier(t);
+                if (id == null) continue;
+                out.add(id.toString());
+            }
+        }
+
+        return out;
+    }
+
+    private static Identifier chestsort$parseItemIdentifier(String itemId) {
+        if (itemId == null) return null;
+        String t = itemId.trim();
+        if (t.isEmpty()) return null;
+        Identifier id = Identifier.tryParse(t);
+        if (id != null) return id;
+        if (t.indexOf(':') < 0) {
+            return Identifier.tryParse("minecraft:" + t);
+        }
+        return null;
+    }
+
+    private static Identifier chestsort$parseTagIdentifier(String tagId) {
+        if (tagId == null) return null;
+        String t = tagId.trim();
+        if (t.isEmpty()) return null;
+        if (t.startsWith("#")) t = t.substring(1);
+
+        Identifier id = Identifier.tryParse(t);
+        if (id != null) return id;
+        if (t.indexOf(':') < 0) {
+            return Identifier.tryParse("minecraft:" + t);
+        }
+        return null;
     }
 
     private static int tags(ServerCommandSource source, Item item) {
