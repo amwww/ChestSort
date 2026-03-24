@@ -691,9 +691,12 @@ public final class ChestSortNetworking {
 
             String itemId = Registries.ITEM.getId(stack.getItem()).toString();
 
-            if (state != null && playerUuid != null && !playerUuid.isEmpty() && state.isItemBlacklisted(playerUuid, itemId)) {
-                continue;
-            }
+            String blMode = state != null && playerUuid != null && !playerUuid.isEmpty()
+                ? state.getBlacklistMode(playerUuid)
+                : ChestSortState.BLACKLIST_MODE_PREVENT_SORT;
+            boolean preventSort = ChestSortState.blacklistModePreventsSort(blMode);
+            boolean strictSort = ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(blMode);
+            boolean globallyBlacklisted = preventSort && state != null && playerUuid != null && !playerUuid.isEmpty() && state.isItemBlacklisted(playerUuid, itemId);
 
             boolean allowed = allowedItemIds.contains(itemId);
             if (!allowed) {
@@ -706,6 +709,8 @@ public final class ChestSortNetworking {
             }
 
             if (!allowed) continue;
+
+            if (globallyBlacklisted && (strictSort || !whitelistPriority)) continue;
 
             boolean blocked = blockedItemIds.contains(itemId);
             if (!blocked) {
@@ -983,7 +988,7 @@ public final class ChestSortNetworking {
         return moved;
     }
 
-    private static List<TagFilterRuntime> compileTagFilters(List<TagFilterSpec> tags) {
+    public static List<TagFilterRuntime> compileTagFilters(List<TagFilterSpec> tags) {
         if (tags == null || tags.isEmpty()) return List.of();
         ArrayList<TagFilterRuntime> out = new ArrayList<>(tags.size());
         for (TagFilterSpec tag : tags) {
@@ -1008,8 +1013,8 @@ public final class ChestSortNetworking {
         return out;
     }
 
-    private record TagFilterRuntime(TagKey<net.minecraft.item.Item> tagKey, Set<String> exceptions) {
-        boolean matches(ItemStack stack, String itemId) {
+    public record TagFilterRuntime(TagKey<net.minecraft.item.Item> tagKey, Set<String> exceptions) {
+        public boolean matches(ItemStack stack, String itemId) {
             if (exceptions != null && exceptions.contains(itemId)) return false;
             return stack.isIn(tagKey);
         }

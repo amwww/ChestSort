@@ -5,9 +5,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import dev.dromer.chestsort.client.ClientLastInteractedBlock;
+import dev.dromer.chestsort.client.ClientNetworkingUtil;
 import dev.dromer.chestsort.client.ClientWandSelectionState;
 import dev.dromer.chestsort.net.payload.WandSelectPayload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.network.ClientPlayerInteractionManager;
 import net.minecraft.registry.Registries;
@@ -39,7 +40,7 @@ public class ClientPlayerInteractionManagerMixin {
         if (!chestsort$isHoldingWand()) return;
 
         String dimId = mc.world.getRegistryKey().getValue().toString();
-        ClientPlayNetworking.send(new WandSelectPayload((byte) 1, dimId, pos.asLong()));
+        ClientNetworkingUtil.sendSafe(new WandSelectPayload((byte) 1, dimId, pos.asLong()));
 
         // Prevent client-side breaking/prediction.
         cir.setReturnValue(false);
@@ -59,6 +60,12 @@ public class ClientPlayerInteractionManagerMixin {
         var mc = MinecraftClient.getInstance();
         if (mc == null || mc.player == null || mc.world == null) return;
 
+        if (hitResult != null && hitResult.getBlockPos() != null) {
+            String dimId = mc.world.getRegistryKey().getValue().toString();
+            BlockPos pos = hitResult.getBlockPos();
+            ClientLastInteractedBlock.set(dimId, pos.asLong());
+        }
+
         String wandItemId = ClientWandSelectionState.wandItemId();
         if (wandItemId == null || wandItemId.isEmpty()) return;
 
@@ -67,7 +74,7 @@ public class ClientPlayerInteractionManagerMixin {
 
         BlockPos pos = hitResult.getBlockPos();
         String dimId = mc.world.getRegistryKey().getValue().toString();
-        ClientPlayNetworking.send(new WandSelectPayload((byte) 2, dimId, pos.asLong()));
+        ClientNetworkingUtil.sendSafe(new WandSelectPayload((byte) 2, dimId, pos.asLong()));
 
         // Prevent opening/using blocks while selecting.
         cir.setReturnValue(ActionResult.SUCCESS);

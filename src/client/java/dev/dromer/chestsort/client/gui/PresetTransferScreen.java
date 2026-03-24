@@ -1,10 +1,12 @@
 package dev.dromer.chestsort.client.gui;
 
+import java.util.List;
+
+import dev.dromer.chestsort.client.ClientNetworkingUtil;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -13,8 +15,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-
-import java.util.List;
 
 public final class PresetTransferScreen extends Screen {
     public enum Mode {
@@ -122,7 +122,17 @@ public final class PresetTransferScreen extends Screen {
             // Not a presetList; fall through to single preset import.
         }
 
-        ClientPlayNetworking.send(new ImportPresetPayload(raw));
+        boolean sent = ClientNetworkingUtil.sendSafe(new ImportPresetPayload(raw));
+        if (!sent) {
+            try {
+                var decoded = Cs2StringCodec.decodePresetImport(raw);
+                ClientPresetRegistry.putLocal(decoded.name(), decoded.whitelist());
+                ClientPresetRegistry.putLocalBlacklist(decoded.name(), decoded.blacklist());
+            } catch (IllegalArgumentException e) {
+                this.error = e.getMessage();
+                return;
+            }
+        }
         this.close();
     }
 

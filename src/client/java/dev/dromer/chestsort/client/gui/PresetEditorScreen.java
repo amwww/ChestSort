@@ -1,10 +1,18 @@
 package dev.dromer.chestsort.client.gui;
 
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+
+import dev.dromer.chestsort.client.ClientNetworkingUtil;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -19,14 +27,6 @@ import net.minecraft.registry.RegistryKeys;
 import net.minecraft.registry.tag.TagKey;
 import net.minecraft.text.Text;
 import net.minecraft.util.Identifier;
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
 
 public final class PresetEditorScreen extends Screen {
     private static final int PANEL_W = 180;
@@ -64,6 +64,8 @@ public final class PresetEditorScreen extends Screen {
 
     private volatile List<String> chestsort$allItemTagIds;
     private volatile boolean chestsort$tagIdScanStarted = false;
+
+    private volatile long chestsort$tagIdScanLastAttemptMs = 0L;
 
     private List<Item> resultItems = List.of();
     private List<String> resultTagIds = List.of();
@@ -211,7 +213,7 @@ public final class PresetEditorScreen extends Screen {
             List.of()
         ).normalized();
 
-        ClientPlayNetworking.send(new SetPresetV2Payload(this.presetName, wl, bl));
+        ClientNetworkingUtil.sendSafe(new SetPresetV2Payload(this.presetName, wl, bl));
         ClientPresetRegistry.putLocal(this.presetName, wl);
         ClientPresetRegistry.putLocalBlacklist(this.presetName, bl);
     }
@@ -684,11 +686,19 @@ public final class PresetEditorScreen extends Screen {
 
     private void chestsort$ensureItemTagIdsScanStarted() {
         if (this.chestsort$allItemTagIds != null) return;
-        if (this.chestsort$tagIdScanStarted) return;
+        long now = System.currentTimeMillis();
+        if (this.chestsort$tagIdScanStarted && (now - this.chestsort$tagIdScanLastAttemptMs) < 5000L) return;
         this.chestsort$tagIdScanStarted = true;
+        this.chestsort$tagIdScanLastAttemptMs = now;
 
         Thread t = new Thread(() -> {
             List<String> ids = chestsort$collectAllItemTagIds();
+            if (ids == null || ids.isEmpty()) {
+                // Tags may not be bound yet; allow retry later.
+                this.chestsort$tagIdScanStarted = false;
+                return;
+            }
+
             this.chestsort$allItemTagIds = ids;
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc != null) {
@@ -702,27 +712,18 @@ public final class PresetEditorScreen extends Screen {
     private static List<String> chestsort$collectAllItemTagIds() {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         try {
-            Object registry = Registries.ITEM;
-            List<String> methodNames = List.of("streamTags", "getTagNames", "getTags", "streamTagKeys", "getTagKeys");
-            for (String methodName : methodNames) {
-                java.lang.reflect.Method m;
-                try {
-                    m = registry.getClass().getMethod(methodName);
-                } catch (NoSuchMethodException ignored) {
-                    continue;
-                }
+            MinecraftClient mc = MinecraftClient.getInstance();
+            net.minecraft.registry.Registry<Item> registry = (mc != null && mc.world != null)
+                ? mc.world.getRegistryManager().getOrThrow(RegistryKeys.ITEM)
+                : Registries.ITEM;
 
-                Object res = m.invoke(registry);
-                if (res == null) continue;
-
-                if (res instanceof java.util.stream.Stream<?> stream) {
-                    stream.forEach(o -> chestsort$collectTagIdFromUnknown(o, out));
-                } else if (res instanceof Iterable<?> it) {
-                    for (Object o : it) chestsort$collectTagIdFromUnknown(o, out);
-                }
-
-                if (!out.isEmpty()) break;
-            }
+            registry.streamTags().forEach(named -> {
+                if (named == null) return;
+                TagKey<Item> key = named.getTag();
+                if (key == null) return;
+                Identifier id = key.id();
+                if (id != null) out.add("#" + id);
+            });
         } catch (Throwable ignored) {
         }
 

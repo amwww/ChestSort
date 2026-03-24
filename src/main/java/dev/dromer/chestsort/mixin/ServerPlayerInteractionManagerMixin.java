@@ -72,6 +72,7 @@ public class ServerPlayerInteractionManagerMixin {
         long canonicalPosLong = canonical.posLong();
 
         state = ChestSortState.get(serverWorld.getServer());
+        state.setOpenContainer(player.getUuidAsString(), serverWorld.getRegistryKey().getValue().toString(), canonicalPosLong);
 
         // If this is a double chest, migrate any legacy per-half filters into the canonical key.
         // (Helps users upgrading from older versions where each half had a separate whitelist.)

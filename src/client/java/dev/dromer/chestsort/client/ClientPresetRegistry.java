@@ -1,7 +1,5 @@
 package dev.dromer.chestsort.client;
 
-import dev.dromer.chestsort.filter.ContainerFilterSpec;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -9,9 +7,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import dev.dromer.chestsort.filter.ContainerFilterSpec;
+
 public final class ClientPresetRegistry {
     private static final Map<String, ContainerFilterSpec> presetsByName = new HashMap<>();
     private static final Map<String, ContainerFilterSpec> presetBlacklistsByName = new HashMap<>();
+
+    private static volatile boolean persistenceEnabled = true;
 
     private static volatile byte pendingOpenMode = -1;
     private static volatile String pendingOpenName = "";
@@ -81,6 +83,7 @@ public final class ClientPresetRegistry {
         String n = name.trim();
         if (n.isEmpty()) return;
         presetsByName.put(n, (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized());
+        if (persistenceEnabled) ClientPresetStorage.saveFromRegistry();
     }
 
     public static void putLocalBlacklist(String name, ContainerFilterSpec spec) {
@@ -88,6 +91,7 @@ public final class ClientPresetRegistry {
         String n = name.trim();
         if (n.isEmpty()) return;
         presetBlacklistsByName.put(n, (spec == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : spec).normalized());
+        if (persistenceEnabled) ClientPresetStorage.saveFromRegistry();
     }
 
     public static void removeLocal(String name) {
@@ -95,6 +99,11 @@ public final class ClientPresetRegistry {
         String n = name.trim();
         presetsByName.remove(n);
         presetBlacklistsByName.remove(n);
+        if (persistenceEnabled) ClientPresetStorage.saveFromRegistry();
+    }
+
+    static void setPersistenceEnabled(boolean enabled) {
+        persistenceEnabled = enabled;
     }
 
     public static void requestOpen(byte mode, String name) {

@@ -40,6 +40,11 @@ public class ChestSortState extends PersistentState {
     public static final String HIGHLIGHTS_OFF = "off";
     public static final String HIGHLIGHTS_UNTIL_OPENED = "until_opened";
 
+    public static final String BLACKLIST_MODE_PREVENT_SORT = "preventsort";
+    public static final String BLACKLIST_MODE_STRICT_PREVENT_SORT = "strictpreventsort";
+    public static final String BLACKLIST_MODE_PREVENT_ENTRY = "prevententry";
+    public static final String BLACKLIST_MODE_STRICT_PREVENT_ENTRY = "strictprevententry";
+
     private record ContainerBlacklistBundle(
         Map<String, ContainerFilterSpec> blacklistSpecs,
         Map<String, Boolean> whitelistPriorityByContainer
@@ -68,15 +73,45 @@ public class ChestSortState extends PersistentState {
         ).apply(instance, PresetBundle::new));
     }
 
+    private record PlayerSettingsBundle(
+        Map<String, String> lastFindItemByPlayer,
+        Map<String, String> autosortModeByPlayer,
+        Map<String, String> highlightModeByPlayer,
+        Map<String, List<Integer>> lockedSlotsByPlayer,
+        Map<String, List<String>> itemBlacklistByPlayer,
+        Map<String, String> blacklistModeByPlayer,
+        Map<String, Boolean> clearHighlightsOnNextOpenByPlayer
+    ) {
+        static final MapCodec<PlayerSettingsBundle> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+            Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("lastFind", Map.of())
+                .forGetter(PlayerSettingsBundle::lastFindItemByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("autosortModeByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::autosortModeByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("highlightModeByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::highlightModeByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.INT.listOf()).optionalFieldOf("lockedSlotsByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::lockedSlotsByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.STRING.listOf()).optionalFieldOf("itemBlacklistByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::itemBlacklistByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("blacklistModeByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::blacklistModeByPlayer),
+            Codec.unboundedMap(Codec.STRING, Codec.BOOL).optionalFieldOf("clearHighlightsOnNextOpenByPlayer", Map.of())
+                .forGetter(PlayerSettingsBundle::clearHighlightsOnNextOpenByPlayer)
+        ).apply(instance, PlayerSettingsBundle::new));
+    }
+
     public static final Codec<ChestSortState> CODEC = RecordCodecBuilder.create(instance -> instance.group(
         Codec.LONG.optionalFieldOf("lastFullScanMs", 0L).forGetter(s -> s.lastFullScanMs),
         ContainerSnapshot.CODEC.listOf().optionalFieldOf("snapshots", List.of()).forGetter(s -> new ArrayList<>(s.snapshotsByKey.values())),
-        Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("lastFind", Map.of()).forGetter(s -> s.lastFindItemByPlayerUuid),
-        Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("autosortModeByPlayer", Map.of()).forGetter(s -> s.autosortModeByPlayerUuid),
-        Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("highlightModeByPlayer", Map.of()).forGetter(s -> s.highlightModeByPlayerUuid),
-        Codec.unboundedMap(Codec.STRING, Codec.INT.listOf()).optionalFieldOf("lockedSlotsByPlayer", Map.of()).forGetter(s -> s.lockedSlotsByPlayerUuid),
-        Codec.unboundedMap(Codec.STRING, Codec.STRING.listOf()).optionalFieldOf("itemBlacklistByPlayer", Map.of()).forGetter(s -> s.itemBlacklistByPlayerUuid),
-        Codec.unboundedMap(Codec.STRING, Codec.BOOL).optionalFieldOf("clearHighlightsOnNextOpenByPlayer", Map.of()).forGetter(s -> s.clearHighlightsOnNextOpenByPlayerUuid),
+        PlayerSettingsBundle.CODEC.forGetter(s -> new PlayerSettingsBundle(
+            s.lastFindItemByPlayerUuid,
+            s.autosortModeByPlayerUuid,
+            s.highlightModeByPlayerUuid,
+            s.lockedSlotsByPlayerUuid,
+            s.itemBlacklistByPlayerUuid,
+            s.blacklistModeByPlayerUuid,
+            s.clearHighlightsOnNextOpenByPlayerUuid
+        )),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("wandItemByPlayer", Map.of()).forGetter(s -> s.wandItemIdByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("wandPos1ByPlayer", Map.of()).forGetter(s -> s.wandPos1KeyByPlayerUuid),
         Codec.unboundedMap(Codec.STRING, Codec.STRING).optionalFieldOf("wandPos2ByPlayer", Map.of()).forGetter(s -> s.wandPos2KeyByPlayerUuid),
@@ -85,16 +120,17 @@ public class ChestSortState extends PersistentState {
         Codec.unboundedMap(Codec.STRING, ContainerFilterSpec.CODEC).optionalFieldOf("filterSpecs", Map.of()).forGetter(s -> s.filterSpecByKey),
         ContainerBlacklistBundle.CODEC.forGetter(s -> new ContainerBlacklistBundle(s.blacklistSpecByKey, s.whitelistPriorityByKey)),
         PresetBundle.CODEC.forGetter(s -> new PresetBundle(s.presetsByName, s.presetBlacklistByName))
-    ).apply(instance, (lastFullScanMs, snapshots, lastFind, autosortModes, highlightModes, lockedSlotsByPlayer, itemBlacklistByPlayer, clearHighlightsOnNextOpen, wandItemByPlayer, wandPos1ByPlayer, wandPos2ByPlayer, wandClipboardByPlayer, legacyFilters, filterSpecs, blacklistBundle, presetBundle) ->
+    ).apply(instance, (lastFullScanMs, snapshots, playerSettings, wandItemByPlayer, wandPos1ByPlayer, wandPos2ByPlayer, wandClipboardByPlayer, legacyFilters, filterSpecs, blacklistBundle, presetBundle) ->
         new ChestSortState(
             lastFullScanMs,
             snapshots,
-            lastFind,
-            autosortModes,
-            highlightModes,
-            lockedSlotsByPlayer,
-            itemBlacklistByPlayer,
-            clearHighlightsOnNextOpen,
+            playerSettings.lastFindItemByPlayer(),
+            playerSettings.autosortModeByPlayer(),
+            playerSettings.highlightModeByPlayer(),
+            playerSettings.lockedSlotsByPlayer(),
+            playerSettings.itemBlacklistByPlayer(),
+            playerSettings.blacklistModeByPlayer(),
+            playerSettings.clearHighlightsOnNextOpenByPlayer(),
             wandItemByPlayer,
             wandPos1ByPlayer,
             wandPos2ByPlayer,
@@ -121,6 +157,7 @@ public class ChestSortState extends PersistentState {
     private final Map<String, String> highlightModeByPlayerUuid = new HashMap<>();
     private final Map<String, List<Integer>> lockedSlotsByPlayerUuid = new HashMap<>();
     private final Map<String, List<String>> itemBlacklistByPlayerUuid = new HashMap<>();
+    private final Map<String, String> blacklistModeByPlayerUuid = new HashMap<>();
     private final Map<String, Boolean> clearHighlightsOnNextOpenByPlayerUuid = new HashMap<>();
 
     // Wand feature: per-player bound item id and selection positions.
@@ -141,6 +178,11 @@ public class ChestSortState extends PersistentState {
     // Transient (non-persisted) state: last sort undo transaction per player.
     private final transient Map<String, SortUndoTransaction> lastSortUndoByPlayerUuid = new HashMap<>();
     private final transient AtomicInteger undoCounter = new AtomicInteger(0);
+
+    public record OpenContainerRef(String dimensionId, long posLong) {
+    }
+
+    private final transient Map<String, String> openContainerKeyByPlayerUuid = new HashMap<>();
 
     public record SortUndoTransaction(
         String dimensionId,
@@ -164,7 +206,7 @@ public class ChestSortState extends PersistentState {
     public ChestSortState() {
     }
 
-    private ChestSortState(long lastFullScanMs, List<ContainerSnapshot> snapshots, Map<String, String> lastFind, Map<String, String> autosortModes, Map<String, String> highlightModes, Map<String, List<Integer>> lockedSlotsByPlayer, Map<String, List<String>> itemBlacklistByPlayer, Map<String, Boolean> clearHighlightsOnNextOpen, Map<String, String> wandItemByPlayer, Map<String, String> wandPos1ByPlayer, Map<String, String> wandPos2ByPlayer, Map<String, ContainerFilterSpec> wandClipboardByPlayer, Map<String, List<String>> legacyFilters, Map<String, ContainerFilterSpec> filterSpecs, Map<String, ContainerFilterSpec> blacklistSpecs, Map<String, Boolean> whitelistPriorityByContainer, Map<String, ContainerFilterSpec> presets, Map<String, ContainerFilterSpec> presetBlacklists) {
+    private ChestSortState(long lastFullScanMs, List<ContainerSnapshot> snapshots, Map<String, String> lastFind, Map<String, String> autosortModes, Map<String, String> highlightModes, Map<String, List<Integer>> lockedSlotsByPlayer, Map<String, List<String>> itemBlacklistByPlayer, Map<String, String> blacklistModeByPlayer, Map<String, Boolean> clearHighlightsOnNextOpen, Map<String, String> wandItemByPlayer, Map<String, String> wandPos1ByPlayer, Map<String, String> wandPos2ByPlayer, Map<String, ContainerFilterSpec> wandClipboardByPlayer, Map<String, List<String>> legacyFilters, Map<String, ContainerFilterSpec> filterSpecs, Map<String, ContainerFilterSpec> blacklistSpecs, Map<String, Boolean> whitelistPriorityByContainer, Map<String, ContainerFilterSpec> presets, Map<String, ContainerFilterSpec> presetBlacklists) {
         this.lastFullScanMs = lastFullScanMs;
         for (ContainerSnapshot snapshot : snapshots) {
             this.snapshotsByKey.put(key(snapshot.dimensionId(), snapshot.posLong()), snapshot);
@@ -185,6 +227,10 @@ public class ChestSortState extends PersistentState {
 
         if (itemBlacklistByPlayer != null) {
             this.itemBlacklistByPlayerUuid.putAll(itemBlacklistByPlayer);
+        }
+
+        if (blacklistModeByPlayer != null) {
+            this.blacklistModeByPlayerUuid.putAll(blacklistModeByPlayer);
         }
 
         if (clearHighlightsOnNextOpen != null) {
@@ -237,6 +283,64 @@ public class ChestSortState extends PersistentState {
             for (var e : this.legacyFilterItemsByKey.entrySet()) {
                 this.filterSpecByKey.put(e.getKey(), ContainerFilterSpec.fromLegacyItems(e.getValue()).normalized());
             }
+        }
+    }
+
+    public static boolean blacklistModePreventsSort(String modeRaw) {
+        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase();
+        return BLACKLIST_MODE_PREVENT_SORT.equals(m) || BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m);
+    }
+
+    public static boolean blacklistModePreventsEntry(String modeRaw) {
+        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase();
+        return BLACKLIST_MODE_PREVENT_ENTRY.equals(m) || BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m);
+    }
+
+    public static boolean blacklistModeIsStrict(String modeRaw) {
+        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase();
+        return BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m) || BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m);
+    }
+
+    public String getBlacklistMode(String playerUuid) {
+        if (playerUuid == null || playerUuid.isEmpty()) return BLACKLIST_MODE_PREVENT_SORT;
+        String v = blacklistModeByPlayerUuid.get(playerUuid);
+        if (v == null || v.isEmpty()) return BLACKLIST_MODE_PREVENT_SORT;
+        String m = v.trim().toLowerCase();
+        if (BLACKLIST_MODE_PREVENT_SORT.equals(m) || BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m) || BLACKLIST_MODE_PREVENT_ENTRY.equals(m) || BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m)) {
+            return m;
+        }
+        return BLACKLIST_MODE_PREVENT_SORT;
+    }
+
+    public void setBlacklistMode(String playerUuid, String modeRaw) {
+        if (playerUuid == null || playerUuid.isEmpty()) return;
+        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase();
+        if (m.isEmpty()) m = BLACKLIST_MODE_PREVENT_SORT;
+        if (!BLACKLIST_MODE_PREVENT_SORT.equals(m) && !BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m) && !BLACKLIST_MODE_PREVENT_ENTRY.equals(m) && !BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m)) {
+            m = BLACKLIST_MODE_PREVENT_SORT;
+        }
+        blacklistModeByPlayerUuid.put(playerUuid, m);
+        markDirty();
+    }
+
+    public void setOpenContainer(String playerUuid, String dimId, long posLong) {
+        if (playerUuid == null || playerUuid.isEmpty()) return;
+        if (dimId == null || dimId.isEmpty()) return;
+        openContainerKeyByPlayerUuid.put(playerUuid, key(dimId, posLong));
+    }
+
+    public OpenContainerRef getOpenContainer(String playerUuid) {
+        if (playerUuid == null || playerUuid.isEmpty()) return null;
+        String k = openContainerKeyByPlayerUuid.get(playerUuid);
+        if (k == null || k.isEmpty()) return null;
+        int idx = k.lastIndexOf("|");
+        if (idx < 0) return null;
+        String dimId = k.substring(0, idx);
+        try {
+            long posLong = Long.parseLong(k.substring(idx + 1));
+            return new OpenContainerRef(dimId, posLong);
+        } catch (NumberFormatException e) {
+            return null;
         }
     }
 

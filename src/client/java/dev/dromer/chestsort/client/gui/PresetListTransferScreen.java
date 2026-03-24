@@ -1,10 +1,15 @@
 package dev.dromer.chestsort.client.gui;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import dev.dromer.chestsort.client.ClientNetworkingUtil;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.gui.DrawContext;
 import net.minecraft.client.gui.screen.Screen;
@@ -13,11 +18,6 @@ import net.minecraft.client.gui.widget.TextFieldWidget;
 import net.minecraft.client.input.KeyInput;
 import net.minecraft.text.Text;
 import net.minecraft.util.Formatting;
-
-import java.util.ArrayList;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
 
 /** Checkbox-based preset list import/export helper screen. */
 public final class PresetListTransferScreen extends Screen {
@@ -239,7 +239,18 @@ public final class PresetListTransferScreen extends Screen {
         }
 
         String encoded = Cs2StringCodec.encodePresetList(whitelists, blacklists);
-        ClientPlayNetworking.send(new ImportPresetPayload(encoded));
+        boolean sent = ClientNetworkingUtil.sendSafe(new ImportPresetPayload(encoded));
+        if (!sent) {
+            for (var e : whitelists.entrySet()) {
+                String name = e.getKey();
+                ContainerFilterSpec wl = e.getValue();
+                ContainerFilterSpec bl = blacklists.get(name);
+                ClientPresetRegistry.putLocal(name, wl);
+                if (bl != null && !bl.isEmpty()) {
+                    ClientPresetRegistry.putLocalBlacklist(name, bl);
+                }
+            }
+        }
         this.close();
     }
 

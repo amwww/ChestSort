@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
@@ -27,8 +26,8 @@ import dev.dromer.chestsort.util.ContainerCanonicalizer;
 import dev.dromer.chestsort.util.WandSelectionUtil;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.command.CommandSource;
 import net.minecraft.command.CommandRegistryAccess;
+import net.minecraft.command.CommandSource;
 import net.minecraft.command.argument.BlockPosArgumentType;
 import net.minecraft.command.argument.ItemStackArgumentType;
 import net.minecraft.item.Item;
@@ -87,6 +86,17 @@ public final class ChestSortCommands {
                     .executes(ctx -> blacklistList(ctx.getSource())))
                 .then(CommandManager.literal("clear")
                     .executes(ctx -> blacklistClear(ctx.getSource())))
+                .then(CommandManager.literal("mode")
+                    .executes(ctx -> blacklistMode(ctx.getSource(), ""))
+                    .then(CommandManager.argument("mode", StringArgumentType.word())
+                        .suggests((ctx, builder) -> {
+                            builder.suggest("preventSort");
+                            builder.suggest("strictPreventSort");
+                            builder.suggest("preventEntry");
+                            builder.suggest("strictPreventEntry");
+                            return builder.buildFuture();
+                        })
+                        .executes(ctx -> blacklistMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
                 .then(CommandManager.literal("add")
                     .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
                         .executes(ctx -> blacklistAdd(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
@@ -626,6 +636,16 @@ public final class ChestSortCommands {
         source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
             .append(Text.literal("/cs highlights dismiss").formatted(Formatting.GREEN))
             .append(Text.literal("  (clears current highlights)").formatted(Formatting.GRAY)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
+            .append(Text.literal("/cs blacklist ").formatted(Formatting.GREEN))
+            .append(Text.literal("<list|add|remove|clear>").formatted(Formatting.YELLOW)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
+            .append(Text.literal("/cs blacklist addPreset ").formatted(Formatting.GREEN))
+            .append(Text.literal("<name> ").formatted(Formatting.YELLOW))
+            .append(Text.literal("<blacklist|whitelist|everything>").formatted(Formatting.YELLOW)), false);
+        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
+            .append(Text.literal("/cs blacklist mode ").formatted(Formatting.GREEN))
+            .append(Text.literal("<preventSort|strictPreventSort|preventEntry|strictPreventEntry>").formatted(Formatting.YELLOW)), false);
         return 1;
     }
 
@@ -1124,6 +1144,40 @@ public final class ChestSortCommands {
         source.sendFeedback(() -> Text.literal("[CS] Cleared blacklist: ").formatted(Formatting.GOLD)
             .append(Text.literal(String.valueOf(removed)).formatted(Formatting.AQUA)), false);
         return removed;
+    }
+
+    private static int blacklistMode(ServerCommandSource source, String modeRaw) {
+        ServerPlayerEntity player = source.getPlayer();
+        if (player == null) {
+            source.sendError(Text.literal("[CS] /cs blacklist mode must be run by a player"));
+            return 0;
+        }
+
+        ChestSortState state = ChestSortState.get(source.getServer());
+        if (modeRaw == null || modeRaw.trim().isEmpty()) {
+            String current = state.getBlacklistMode(player.getUuidAsString());
+            source.sendFeedback(() -> Text.literal("[CS] Blacklist mode is: ").formatted(Formatting.GOLD)
+                .append(Text.literal(current).formatted(Formatting.YELLOW)), false);
+            return 1;
+        }
+
+        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase(Locale.ROOT);
+        // Allow friendlier camelCase inputs.
+        m = m.replace("_", "");
+
+        if (!ChestSortState.BLACKLIST_MODE_PREVENT_SORT.equals(m)
+            && !ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m)
+            && !ChestSortState.BLACKLIST_MODE_PREVENT_ENTRY.equals(m)
+            && !ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m)) {
+            source.sendError(Text.literal("[CS] Invalid blacklist mode. Use: preventSort | strictPreventSort | preventEntry | strictPreventEntry"));
+            return 0;
+        }
+
+        final String mFinal = m;
+        state.setBlacklistMode(player.getUuidAsString(), mFinal);
+        source.sendFeedback(() -> Text.literal("[CS] Blacklist mode set to: ").formatted(Formatting.GOLD)
+            .append(Text.literal(mFinal).formatted(Formatting.YELLOW)), false);
+        return 1;
     }
 
     private static int blacklistAddPreset(ServerCommandSource source, String presetName, String modeRaw) {

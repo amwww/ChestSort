@@ -73,14 +73,33 @@ public final class ClientContainerContext {
         filterItems = Collections.unmodifiableList(new ArrayList<>(filterSpec.items()));
     }
 
+    /**
+     * Sets the current container identity (dim/pos/type) without changing filter/blacklist state.
+     * Used for client-only mode on servers without ChestSort, where we infer container coords locally.
+     */
+    public static void setKey(String dimId, long pos, String type) {
+        dimensionId = dimId == null ? "" : dimId;
+        posLong = pos;
+        containerType = type == null ? "" : type;
+        if (filterSpec == null) filterSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        if (blacklistSpec == null) blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        filterItems = filterSpec.items() == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(filterSpec.items()));
+    }
+
     public static void clear() {
         dimensionId = "";
         posLong = 0L;
         containerType = "";
-        filterItems = List.of();
-        filterSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
-        blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
-        whitelistPriority = true;
+        // Keep the last-used filter specs so client-only sorting remains usable on servers
+        // that don't provide container context (i.e. no server mod). A modded server will
+        // overwrite these when it sends the next ContainerContext payload.
+        if (filterSpec == null) {
+            filterSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        }
+        if (blacklistSpec == null) {
+            blacklistSpec = new ContainerFilterSpec(List.of(), List.of(), List.of());
+        }
+        filterItems = filterSpec.items() == null ? List.of() : Collections.unmodifiableList(new ArrayList<>(filterSpec.items()));
     }
 
     public static boolean isChestOrBarrel() {

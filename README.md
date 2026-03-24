@@ -1,6 +1,13 @@
 # ChestSort
 
-ChestSort is a Fabric mod for Minecraft **1.21.11** that helps you **track where items are stored** (chests + barrels) and quickly **sort items from your inventory into containers** using per-container rules.
+![ChestSort Filtering](https://cdn.modrinth.com/data/taG5zlGt/images/227a00e58437806817b04093bf37b832b8680baa.png)
+![ChestSort Sorting](https://cdn.modrinth.com/data/taG5zlGt/images/067f90071fa84c715139b025e8e941924b4a7fdc.png)
+ChestSort is a Fabric mod for Minecraft **1.21.x** that helps you **track where items are stored** (chests + barrels) and quickly **sort items from your inventory into containers** using per-container rules.
+
+## TL;DR
+ChestSort is a lightweight alternative to advanced sorting contraptions that gives you some of the benefits of sorting without even needing to touch redstone, sorting at the click of a button.
+
+<hr>
 
 Ever had a bunch of chests and barrels and forgot where you put that one item? ChestSort lets you search for an item and see which containers have it, with highlights in the world and UI. 
 
@@ -91,9 +98,14 @@ All commands are under `/cs`.
   - Prints the tags for a given item (useful for building tag filters).
 
 - `/cs blacklist ...`
-  - Prevents blacklisted items from being moved by Sort/Autosort.
+  - Controls how blacklisted items behave for Sort/Autosort and (optionally) container entry.
   - `add <item>` / `remove <item>` / `list` / `clear`
   - `addPreset <name> <blacklist|whitelist|everything>` (adds items from a preset’s blacklist, whitelist, or both)
+  - `mode <preventSort|strictPreventSort|preventEntry|strictPreventEntry>`
+    - `preventSort`: prevents blacklisted items from being moved by Sort/Autosort unless the item is whitelisted and whitelist wins priority
+    - `strictPreventSort`: like `preventSort`, but blacklist always wins (ignores whitelist priority)
+    - `preventEntry`: prevents blacklisted items from being put into the container unless the item is whitelisted and whitelist wins priority
+    - `strictPreventEntry`: like `preventEntry`, but blacklist always wins (ignores whitelist priority)
 
 - `/cs presets ...`
   - Manage presets:
@@ -145,16 +157,16 @@ Notes:
 
 ## Installation
 
-1. Install Fabric Loader for Minecraft 1.21.11.
+1. Install Fabric Loader for Minecraft 1.21.x.
 2. Install Fabric API.
 3. Put the built mod jar into your `mods/` folder.
 
 ## Development
 
-- **Minecraft**: 1.21.11
-- **Yarn mappings**: 1.21.11+build.4
+- **Minecraft**: 1.21.x
+- **Yarn mappings**: 1.21.x+build.4
 - **Fabric Loader**: 0.18.4
-- **Fabric API**: 0.141.3+1.21.11
+- **Fabric API**: 0.141.3+1.21.x
 - **Java**: 21
 
 ## Notes to Scanning

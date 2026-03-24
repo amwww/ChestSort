@@ -8,15 +8,20 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import dev.dromer.chestsort.client.ClientContainerContext;
+import dev.dromer.chestsort.client.ClientContainerFilterStorage;
 import dev.dromer.chestsort.client.ClientHighlightState;
+import dev.dromer.chestsort.client.ClientLastInteractedBlock;
 import dev.dromer.chestsort.client.ClientLockedSlotsState;
+import dev.dromer.chestsort.client.ClientNetworkingUtil;
+import dev.dromer.chestsort.client.ClientOnlyOrganizer;
+import dev.dromer.chestsort.client.ClientOnlySorter;
 import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.client.ClientSortNotificationState;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
-import dev.dromer.chestsort.net.payload.OrganizeRequestPayload;
 import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
+import dev.dromer.chestsort.net.payload.OrganizeRequestPayload;
 import dev.dromer.chestsort.net.payload.SetContainerFiltersPayload;
 import dev.dromer.chestsort.net.payload.SetFilterPayload;
 import dev.dromer.chestsort.net.payload.SetFilterV2Payload;
@@ -24,10 +29,9 @@ import dev.dromer.chestsort.net.payload.SetPresetPayload;
 import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
 import dev.dromer.chestsort.net.payload.SortRequestPayload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
-import dev.dromer.chestsort.net.payload.UndoSortPayload;
 import dev.dromer.chestsort.net.payload.ToggleLockedSlotPayload;
+import dev.dromer.chestsort.net.payload.UndoSortPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.font.TextRenderer;
 import net.minecraft.client.gui.DrawContext;
@@ -244,6 +248,9 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private boolean chestsort$tagIdScanStarted = false;
+
+    @Unique
+    private long chestsort$tagIdScanLastAttemptMs = 0L;
 
     @Unique
     private boolean chestsort$filterDirty = false;
@@ -869,12 +876,15 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$saveEditingFilter() {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
 
         if (!chestsort$filterDirty) {
             return;
         }
+
+        String dimId = ClientContainerContext.dimensionId();
+        long posLong = ClientContainerContext.posLong();
+        boolean hasServerContext = dimId != null && !dimId.isEmpty();
 
         // Keep tab storage in sync in case list instances were replaced.
         chestsort$syncTabStorageFromEditingLists();
@@ -891,7 +901,7 @@ public abstract class HandledScreenMixin {
                 java.util.List<TagFilterSpec> blTags = (chestsort$editingBlacklistTags == null ? java.util.List.of() : chestsort$editingBlacklistTags);
                 ContainerFilterSpec blacklistForPreset = new ContainerFilterSpec(blItems, blTags, java.util.List.of(), false).normalized();
 
-                ClientPlayNetworking.send(new SetPresetV2Payload(presetName, whitelistForPreset, blacklistForPreset));
+                ClientNetworkingUtil.sendSafe(new SetPresetV2Payload(presetName, whitelistForPreset, blacklistForPreset));
                 ClientPresetRegistry.putLocal(presetName, whitelistForPreset);
                 ClientPresetRegistry.putLocalBlacklist(presetName, blacklistForPreset);
 
@@ -919,26 +929,33 @@ public abstract class HandledScreenMixin {
         java.util.List<String> blPresets = ContainerFilterSpec.normalizeStrings(chestsort$editingBlacklistPresets == null ? java.util.List.of() : chestsort$editingBlacklistPresets);
         ContainerFilterSpec blacklistForContainer = new ContainerFilterSpec(blItems, blTags, blPresets, false).normalized();
 
-        ClientPlayNetworking.send(new SetContainerFiltersPayload(
-            ClientContainerContext.dimensionId(),
-            ClientContainerContext.posLong(),
-            whitelistForContainer,
-            blacklistForContainer,
-            chestsort$editingWhitelistPriority
-        ));
+        if (hasServerContext) {
+            ClientNetworkingUtil.sendSafe(new SetContainerFiltersPayload(
+                dimId,
+                posLong,
+                whitelistForContainer,
+                blacklistForContainer,
+                chestsort$editingWhitelistPriority
+            ));
 
-        // Legacy whitelist-only payloads (still useful for compatibility).
-        ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), whitelistForContainer));
-        ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), whitelistForContainer.items()));
+            // Legacy whitelist-only payloads (still useful for compatibility).
+            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, posLong, whitelistForContainer));
+            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, posLong, whitelistForContainer.items()));
+        }
 
         ClientContainerContext.set(
-            ClientContainerContext.dimensionId(),
-            ClientContainerContext.posLong(),
+            dimId,
+            posLong,
             ClientContainerContext.containerType(),
             whitelistForContainer,
             blacklistForContainer,
             chestsort$editingWhitelistPriority
         );
+
+        // Client-only persistence (works on unmodded servers once we have a key).
+        if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
+            ClientContainerFilterStorage.put(dimId, posLong, whitelistForContainer, blacklistForContainer, chestsort$editingWhitelistPriority);
+        }
 
         chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelistForContainer.items());
         chestsort$editingWhitelistTags = new java.util.ArrayList<>(whitelistForContainer.tags());
@@ -955,6 +972,25 @@ public abstract class HandledScreenMixin {
     @Inject(method = "init", at = @At("TAIL"))
     @SuppressWarnings("unused")
     private void chestsort$init(CallbackInfo ci) {
+        // Client-only bootstrap: on unmodded servers we won't get ContainerContext packets.
+        // Infer the container position from the last interacted block and load per-container filters.
+        if (this.handler instanceof net.minecraft.screen.GenericContainerScreenHandler) {
+            String currentDim = ClientContainerContext.dimensionId();
+            if (currentDim == null || currentDim.isEmpty()) {
+                String dimId = ClientLastInteractedBlock.dimIdIfRecent(5000);
+                long posLong = ClientLastInteractedBlock.posLongIfRecent(5000);
+                if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
+                    var entry = ClientContainerFilterStorage.get(dimId, posLong);
+                    if (entry != null) {
+                        ClientContainerContext.set(dimId, posLong, "chest", entry.whitelist(), entry.blacklist(), entry.whitelistPriority());
+                    } else {
+                        // Keep last-used filter values, but associate them with this container's key.
+                        ClientContainerContext.setKey(dimId, posLong, "chest");
+                    }
+                }
+            }
+        }
+
         var whitelist = ClientContainerContext.filterSpec();
         var blacklist = ClientContainerContext.blacklistSpec();
         chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelist == null ? java.util.List.of() : whitelist.items());
@@ -978,12 +1014,12 @@ public abstract class HandledScreenMixin {
             long undoId = ClientSortNotificationState.undoId();
             if (undoId == 0L) return;
             if (ClientContainerContext.dimensionId().isEmpty()) return;
-            ClientPlayNetworking.send(new UndoSortPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), undoId));
+            ClientNetworkingUtil.sendSafe(new UndoSortPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), undoId));
         }).dimensions(0, 0, 50, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$undoButton);
 
         chestsort$filterButton = ButtonWidget.builder(Text.literal("Filter"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
+            if (!chestsort$isTargetContainer()) return;
             var wl = ClientContainerContext.filterSpec();
             var bl = ClientContainerContext.blacklistSpec();
             chestsort$editingWhitelistItems = new java.util.ArrayList<>(wl == null ? java.util.List.of() : wl.items());
@@ -1036,8 +1072,7 @@ public abstract class HandledScreenMixin {
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$blacklistTabButton);
 
         chestsort$importOpenButton = ButtonWidget.builder(Text.literal("Import"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
+            if (!chestsort$isTargetContainer()) return;
             chestsort$importPopupOpen = true;
             chestsort$exportPopupOpen = false;
             chestsort$importError = "";
@@ -1051,8 +1086,7 @@ public abstract class HandledScreenMixin {
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$importOpenButton);
 
         chestsort$exportOpenButton = ButtonWidget.builder(Text.literal("Export"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
+            if (!chestsort$isTargetContainer()) return;
             chestsort$exportPopupOpen = true;
             chestsort$importPopupOpen = false;
             chestsort$exportError = "";
@@ -1076,23 +1110,48 @@ public abstract class HandledScreenMixin {
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$exportOpenButton);
 
         chestsort$sortButton = ButtonWidget.builder(Text.literal("Sort"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
+            if (!chestsort$isTargetContainer()) return;
             if (!ClientContainerContext.hasFilter()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
-            ClientPlayNetworking.send(new SortRequestPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong()));
+
+            String dimId = ClientContainerContext.dimensionId();
+            if (dimId != null && !dimId.isEmpty() && ClientNetworkingUtil.canSend(SortRequestPayload.ID)) {
+                ClientNetworkingUtil.sendSafe(new SortRequestPayload(dimId, ClientContainerContext.posLong()));
+                return;
+            }
+
+            // Client-only fallback for servers without ChestSort.
+            ClientOnlySorter.sortIntoOpenContainer(
+                MinecraftClient.getInstance(),
+                this.handler,
+                ClientContainerContext.filterSpec(),
+                ClientContainerContext.blacklistSpec(),
+                ClientContainerContext.whitelistPriority()
+            );
         }).dimensions(rightX, rightY + 48, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$sortButton);
 
         chestsort$organizeButton = ButtonWidget.builder(Text.literal("Organize"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
-            ClientPlayNetworking.send(new OrganizeRequestPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong()));
+            if (!chestsort$isTargetContainer()) return;
+            String dimId = ClientContainerContext.dimensionId();
+            if (dimId != null && !dimId.isEmpty() && ClientNetworkingUtil.canSend(OrganizeRequestPayload.ID)) {
+                ClientNetworkingUtil.sendSafe(new OrganizeRequestPayload(dimId, ClientContainerContext.posLong()));
+                return;
+            }
+
+            // Client-only fallback for servers without ChestSort.
+            ClientOnlyOrganizer.organizeOpenContainer(MinecraftClient.getInstance(), this.handler);
         }).dimensions(rightX, rightY + 72, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$organizeButton);
 
         chestsort$autosortButton = ButtonWidget.builder(Text.literal("Autosort: OFF"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
+            if (!chestsort$isTargetContainer()) return;
+            if (ClientContainerContext.dimensionId().isEmpty() || !ClientNetworkingUtil.canSend(SetFilterV2Payload.ID)) {
+                var client = MinecraftClient.getInstance();
+                if (client != null && client.player != null) {
+                    client.player.sendMessage(Text.literal("[ChestSort] Autosort requires server support").formatted(Formatting.GRAY), false);
+                }
+                return;
+            }
 
             ContainerFilterSpec current = ClientContainerContext.filterSpec();
             current = (current == null) ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of(), false) : current.normalized();
@@ -1101,8 +1160,8 @@ public abstract class HandledScreenMixin {
             ContainerFilterSpec updated = new ContainerFilterSpec(current.items(), current.tags(), current.presets(), next).normalized();
 
             // v2 payload (items + tags + presets + autosort) + legacy v1 payload (items only).
-            ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated));
-            ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated.items()));
+            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated));
+            ClientNetworkingUtil.sendSafe(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated.items()));
             ClientContainerContext.set(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), ClientContainerContext.containerType(), updated);
 
             // Keep the filter editor state in sync if the user opens it right after toggling.
@@ -1111,8 +1170,7 @@ public abstract class HandledScreenMixin {
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$autosortButton);
 
         chestsort$lockSlotButton = ButtonWidget.builder(Text.literal("Lock Slots: OFF"), b -> {
-            if (!ClientContainerContext.isChestOrBarrel()) return;
-            if (ClientContainerContext.dimensionId().isEmpty()) return;
+            if (!chestsort$isTargetContainer()) return;
             chestsort$lockSlotsMode = !chestsort$lockSlotsMode;
         }).dimensions(rightX, rightY + 120, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$lockSlotButton);
@@ -1194,7 +1252,7 @@ public abstract class HandledScreenMixin {
         // Ensure widgets track current window size/GUI scale.
         chestsort$applyWidgetLayout();
 
-        boolean isTarget = ClientContainerContext.isChestOrBarrel();
+        boolean isTarget = chestsort$isTargetContainer();
         boolean hasRightPanel = chestsort$rightPanelW >= 20;
         boolean showMainButtons = isTarget && !chestsort$filterMode && !chestsort$importPopupOpen && !chestsort$exportPopupOpen && !chestsort$presetImportPopupOpen && !chestsort$presetExportPopupOpen;
         if (chestsort$filterButton != null) chestsort$filterButton.visible = showMainButtons;
@@ -1216,7 +1274,7 @@ public abstract class HandledScreenMixin {
         }
 
         if (chestsort$undoButton != null) {
-            boolean showUndo = ClientContainerContext.isChestOrBarrel()
+            boolean showUndo = isTarget
                 && ClientSortNotificationState.isActiveForCurrentContainer()
                 && ClientSortNotificationState.undoId() != 0L;
             chestsort$undoButton.visible = showUndo;
@@ -1287,6 +1345,16 @@ public abstract class HandledScreenMixin {
     }
 
     @Unique
+    private boolean chestsort$isTargetContainer() {
+        // In multiplayer, the server-sent ContainerContext packet can arrive after the screen is already open.
+        // If we gate the GUI purely on that packet, the UI can appear to be "missing" on servers.
+        // Treat vanilla container screens as eligible immediately, and rely on dimensionId/posLong checks
+        // to gate actions that truly require server context.
+        return ClientContainerContext.isChestOrBarrel()
+            || (this.handler instanceof net.minecraft.screen.GenericContainerScreenHandler);
+    }
+
+    @Unique
     private void chestsort$closePresetImportPopup() {
         chestsort$presetImportPopupOpen = false;
         chestsort$presetImportError = "";
@@ -1307,8 +1375,7 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$tryImportPresetFromPopup() {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
 
         String raw = chestsort$presetImportField == null ? "" : chestsort$presetImportField.getText();
         if (raw == null || raw.trim().isEmpty()) {
@@ -1316,14 +1383,42 @@ public abstract class HandledScreenMixin {
             return;
         }
 
-        ClientPlayNetworking.send(new ImportPresetPayload(raw));
+        boolean sent = ClientNetworkingUtil.sendSafe(new ImportPresetPayload(raw));
+        if (!sent) {
+            // Local import fallback: accept both presetList and single preset.
+            try {
+                var list = Cs2StringCodec.decodePresetList(raw);
+                if (list != null) {
+                    if (list.whitelists() != null) {
+                        for (var e : list.whitelists().entrySet()) {
+                            if (e == null) continue;
+                            ClientPresetRegistry.putLocal(e.getKey(), e.getValue());
+                        }
+                    }
+                    if (list.blacklists() != null) {
+                        for (var e : list.blacklists().entrySet()) {
+                            if (e == null) continue;
+                            ClientPresetRegistry.putLocalBlacklist(e.getKey(), e.getValue());
+                        }
+                    }
+                }
+            } catch (IllegalArgumentException ignored) {
+                try {
+                    var decoded = Cs2StringCodec.decodePresetImport(raw);
+                    ClientPresetRegistry.putLocal(decoded.name(), decoded.whitelist());
+                    ClientPresetRegistry.putLocalBlacklist(decoded.name(), decoded.blacklist());
+                } catch (IllegalArgumentException e) {
+                    chestsort$presetImportError = e.getMessage();
+                    return;
+                }
+            }
+        }
         chestsort$closePresetImportPopup();
     }
 
     @Unique
     private void chestsort$openPresetExportPopup(String presetName) {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
 
         String name = presetName == null ? "" : presetName.trim();
         chestsort$presetExportName = name;
@@ -1352,8 +1447,7 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$openPresetImportPopup() {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
         chestsort$presetImportPopupOpen = true;
         chestsort$presetExportPopupOpen = false;
         chestsort$importPopupOpen = false;
@@ -1367,7 +1461,7 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$openPresetEditor(String presetName) {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
+        if (!chestsort$isTargetContainer()) return;
         String name = presetName == null ? "" : presetName.trim();
         if (name.isEmpty()) return;
 
@@ -1408,8 +1502,7 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$toggleAppliedPresetForContainer(String presetName) {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
         String name = presetName == null ? "" : presetName.trim();
         if (name.isEmpty()) return;
 
@@ -1425,9 +1518,13 @@ public abstract class HandledScreenMixin {
         }
 
         ContainerFilterSpec updated = new ContainerFilterSpec(safe.items(), safe.tags(), presets).normalized();
-        ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated));
-        ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated.items()));
-        ClientContainerContext.set(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), ClientContainerContext.containerType(), updated);
+
+        String dimId = ClientContainerContext.dimensionId();
+        if (dimId != null && !dimId.isEmpty()) {
+            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, ClientContainerContext.posLong(), updated));
+            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, ClientContainerContext.posLong(), updated.items()));
+        }
+        ClientContainerContext.set(dimId, ClientContainerContext.posLong(), ClientContainerContext.containerType(), updated);
     }
 
     @Unique
@@ -1450,8 +1547,7 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private void chestsort$tryImportFromPopup() {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
-        if (ClientContainerContext.dimensionId().isEmpty()) return;
+        if (!chestsort$isTargetContainer()) return;
 
         String raw = chestsort$importField == null ? "" : chestsort$importField.getText();
         ContainerFilterSpec spec;
@@ -1464,7 +1560,10 @@ public abstract class HandledScreenMixin {
                     ContainerFilterSpec pSpec = e.getValue();
                     if (name == null || name.trim().isEmpty()) continue;
                     if (pSpec == null) continue;
-                    ClientPlayNetworking.send(new SetPresetPayload(name, pSpec));
+                    // Prefer server if supported; otherwise store locally.
+                    if (!ClientNetworkingUtil.sendSafe(new SetPresetPayload(name, pSpec))) {
+                        ClientPresetRegistry.putLocal(name, pSpec);
+                    }
                 }
             }
             spec = decoded == null ? null : decoded.filter();
@@ -1475,9 +1574,12 @@ public abstract class HandledScreenMixin {
 
         spec = (spec == null) ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : spec.normalized();
 
-        ClientPlayNetworking.send(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), spec));
-        ClientPlayNetworking.send(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), spec.items()));
-        ClientContainerContext.set(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), ClientContainerContext.containerType(), spec);
+        String dimId = ClientContainerContext.dimensionId();
+        if (dimId != null && !dimId.isEmpty()) {
+            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, ClientContainerContext.posLong(), spec));
+            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, ClientContainerContext.posLong(), spec.items()));
+        }
+        ClientContainerContext.set(dimId, ClientContainerContext.posLong(), ClientContainerContext.containerType(), spec);
 
         chestsort$closeImportPopup();
     }
@@ -1510,7 +1612,7 @@ public abstract class HandledScreenMixin {
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
     private void chestsort$mouseClicked(net.minecraft.client.gui.Click click, boolean bl, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
-        if (!ClientContainerContext.isChestOrBarrel()) {
+        if (!chestsort$isTargetContainer()) {
             return;
         }
 
@@ -1523,7 +1625,7 @@ public abstract class HandledScreenMixin {
             Integer idx = chestsort$hoveredPlayerInventoryIndex((int) mouseX, (int) mouseY);
             if (idx != null) {
                 ClientLockedSlotsState.toggleLocal(idx);
-                ClientPlayNetworking.send(new ToggleLockedSlotPayload(idx));
+                ClientNetworkingUtil.sendSafe(new ToggleLockedSlotPayload(idx));
                 cir.setReturnValue(true);
                 cir.cancel();
                 return;
@@ -1820,7 +1922,7 @@ public abstract class HandledScreenMixin {
     @Inject(method = "mouseScrolled", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
     private void chestsort$mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
-        if (!ClientContainerContext.isChestOrBarrel() || !chestsort$filterMode) {
+        if (!chestsort$isTargetContainer() || !chestsort$filterMode) {
             return;
         }
         if (verticalAmount == 0.0) {
@@ -1868,7 +1970,7 @@ public abstract class HandledScreenMixin {
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
     private void chestsort$keyPressed(net.minecraft.client.input.KeyInput keyInput, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
-        if (!ClientContainerContext.isChestOrBarrel()) {
+        if (!chestsort$isTargetContainer()) {
             return;
         }
 
@@ -2138,7 +2240,7 @@ public abstract class HandledScreenMixin {
     private void chestsort$renderPanels(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         chestsort$applyVisibility();
 
-        if (ClientContainerContext.isChestOrBarrel()) {
+        if (chestsort$isTargetContainer()) {
             if (ClientPresetRegistry.hasPendingOpen()) {
                 byte mode = ClientPresetRegistry.pendingOpenMode();
                 String name = ClientPresetRegistry.pendingOpenName();
@@ -2643,7 +2745,7 @@ public abstract class HandledScreenMixin {
     @Inject(method = "render", at = @At("TAIL"))
     @SuppressWarnings("unused")
     private void chestsort$renderLockedSlots(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
-        if (!ClientContainerContext.isChestOrBarrel()) return;
+        if (!chestsort$isTargetContainer()) return;
 
         var client = MinecraftClient.getInstance();
         if (client == null || client.player == null) return;
@@ -2968,11 +3070,19 @@ public abstract class HandledScreenMixin {
     @Unique
     private void chestsort$ensureItemTagIdsScanStarted() {
         if (chestsort$allItemTagIds != null) return;
-        if (chestsort$tagIdScanStarted) return;
+        long now = System.currentTimeMillis();
+        if (chestsort$tagIdScanStarted && (now - chestsort$tagIdScanLastAttemptMs) < 5000L) return;
         chestsort$tagIdScanStarted = true;
+        chestsort$tagIdScanLastAttemptMs = now;
 
         Thread t = new Thread(() -> {
             java.util.List<String> ids = chestsort$collectAllItemTagIdsBlocking();
+            if (ids == null || ids.isEmpty()) {
+                // Tags may not be bound yet when the UI first opens; allow retry later.
+                chestsort$tagIdScanStarted = false;
+                return;
+            }
+
             chestsort$allItemTagIds = ids;
             MinecraftClient mc = MinecraftClient.getInstance();
             if (mc != null) {
@@ -2989,28 +3099,18 @@ public abstract class HandledScreenMixin {
     private static java.util.List<String> chestsort$collectAllItemTagIdsBlocking() {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         try {
-            Object registry = Registries.ITEM;
-            // Try common no-arg tag enumeration methods across Yarn versions.
-            java.util.List<String> methodNames = java.util.List.of("streamTags", "getTagNames", "getTags", "streamTagKeys", "getTagKeys");
-            for (String methodName : methodNames) {
-                java.lang.reflect.Method m;
-                try {
-                    m = registry.getClass().getMethod(methodName);
-                } catch (NoSuchMethodException ignored) {
-                    continue;
-                }
+            MinecraftClient mc = MinecraftClient.getInstance();
+            net.minecraft.registry.Registry<Item> registry = (mc != null && mc.world != null)
+                ? mc.world.getRegistryManager().getOrThrow(RegistryKeys.ITEM)
+                : Registries.ITEM;
 
-                Object res = m.invoke(registry);
-                if (res == null) continue;
-
-                if (res instanceof java.util.stream.Stream<?> stream) {
-                    stream.forEach(o -> chestsort$collectTagIdFromUnknown(o, out));
-                } else if (res instanceof java.lang.Iterable<?> it) {
-                    for (Object o : it) chestsort$collectTagIdFromUnknown(o, out);
-                }
-
-                if (!out.isEmpty()) break;
-            }
+            registry.streamTags().forEach(named -> {
+                if (named == null) return;
+                TagKey<Item> key = named.getTag();
+                if (key == null) return;
+                Identifier id = key.id();
+                if (id != null) out.add("#" + id);
+            });
         } catch (Throwable ignored) {
             // If tag enumeration isn't available, we simply won't show suggestions.
         }
