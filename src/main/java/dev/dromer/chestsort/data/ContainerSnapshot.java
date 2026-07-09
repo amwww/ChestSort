@@ -2,7 +2,7 @@ package dev.dromer.chestsort.data;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 import java.util.Collections;
 import java.util.HashMap;
@@ -40,7 +40,7 @@ public final class ContainerSnapshot {
     }
 
     public BlockPos pos() {
-        return BlockPos.fromLong(posLong);
+        return BlockPos.of(posLong);
     }
 
     public String containerType() {

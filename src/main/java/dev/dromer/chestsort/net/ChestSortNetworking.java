@@ -37,58 +37,68 @@ import dev.dromer.chestsort.util.Cs2StringCodec;
 import dev.dromer.chestsort.util.WandSelectionUtil;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.entity.BarrelBlockEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.Container;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.tags.TagKey;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.ChatFormatting;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.MutableComponent;
 
 public final class ChestSortNetworking {
     private ChestSortNetworking() {
     }
 
     public static void init() {
-        PayloadTypeRegistry.playS2C().register(ContainerHighlightPayload.ID, ContainerHighlightPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(FindHighlightsPayload.ID, FindHighlightsPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(ContainerContextPayload.ID, ContainerContextPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(ContainerContextV2Payload.ID, ContainerContextV2Payload.CODEC);
-        PayloadTypeRegistry.playS2C().register(ContainerContextV3Payload.ID, ContainerContextV3Payload.CODEC);
-        PayloadTypeRegistry.playS2C().register(PresetSyncPayload.ID, PresetSyncPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(PresetSyncV2Payload.ID, PresetSyncV2Payload.CODEC);
-        PayloadTypeRegistry.playS2C().register(OpenPresetUiPayload.ID, OpenPresetUiPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(SortResultPayload.ID, SortResultPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(WandSelectionPayload.ID, WandSelectionPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(LockedSlotsSyncPayload.ID, LockedSlotsSyncPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ContainerHighlightPayload.ID, ContainerHighlightPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(FindHighlightsPayload.ID, FindHighlightsPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ContainerContextPayload.ID, ContainerContextPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ContainerContextV2Payload.ID, ContainerContextV2Payload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(ContainerContextV3Payload.ID, ContainerContextV3Payload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(PresetSyncPayload.ID, PresetSyncPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(PresetSyncV2Payload.ID, PresetSyncV2Payload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(OpenPresetUiPayload.ID, OpenPresetUiPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(SortResultPayload.ID, SortResultPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(WandSelectionPayload.ID, WandSelectionPayload.CODEC);
+        PayloadTypeRegistry.clientboundPlay().register(LockedSlotsSyncPayload.ID, LockedSlotsSyncPayload.CODEC);
 
-        PayloadTypeRegistry.playC2S().register(SetFilterPayload.ID, SetFilterPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetFilterV2Payload.ID, SetFilterV2Payload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetContainerFiltersPayload.ID, SetContainerFiltersPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SortRequestPayload.ID, SortRequestPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(OrganizeRequestPayload.ID, OrganizeRequestPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(UndoSortPayload.ID, UndoSortPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetPresetPayload.ID, SetPresetPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(SetPresetV2Payload.ID, SetPresetV2Payload.CODEC);
-        PayloadTypeRegistry.playC2S().register(ImportPresetPayload.ID, ImportPresetPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(ImportPresetListPayload.ID, ImportPresetListPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(WandSelectPayload.ID, WandSelectPayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(ToggleLockedSlotPayload.ID, ToggleLockedSlotPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetFilterPayload.ID, SetFilterPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetFilterV2Payload.ID, SetFilterV2Payload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetContainerFiltersPayload.ID, SetContainerFiltersPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SortRequestPayload.ID, SortRequestPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(OrganizeRequestPayload.ID, OrganizeRequestPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(UndoSortPayload.ID, UndoSortPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetPresetPayload.ID, SetPresetPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(SetPresetV2Payload.ID, SetPresetV2Payload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ImportPresetPayload.ID, ImportPresetPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ImportPresetListPayload.ID, ImportPresetListPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(WandSelectPayload.ID, WandSelectPayload.CODEC);
+        PayloadTypeRegistry.serverboundPlay().register(ToggleLockedSlotPayload.ID, ToggleLockedSlotPayload.CODEC);
 
         ServerPlayNetworking.registerGlobalReceiver(ToggleLockedSlotPayload.ID, (payload, context) -> {
             context.server().execute(() -> {
-                var player = context.player();
+            var player = context.player();
                 if (player == null) return;
 
                 int idx = payload.playerInventoryIndex();
-                if (idx < 0 || idx >= player.getInventory().size()) return;
+                if (idx < 0 || idx >= player.getInventory().getContainerSize()) {
+                    System.err.println("[ChestSort] ToggleLockedSlotPayload idx " + idx + " out of range (size=" + player.getInventory().getContainerSize() + ")");
+                    return;
+                }
 
                 ChestSortState state = ChestSortState.get(context.server());
-                state.toggleLockedSlot(player.getUuidAsString(), idx);
+                state.toggleLockedSlot(player.getStringUUID(), idx);
+                System.err.println("[ChestSort] Toggled idx " + idx + ", now locked=" + state.getLockedSlots(player.getStringUUID()));
                 sendLockedSlotsTo(player);
             });
         });
@@ -99,7 +109,7 @@ public final class ChestSortNetworking {
                 if (player == null) return;
 
                 ChestSortState state = ChestSortState.get(context.server());
-                String uuid = player.getUuidAsString();
+                String uuid = player.getStringUUID();
                 String wandItemId = state.getWandItemId(uuid);
                 if (wandItemId == null || wandItemId.isEmpty()) return;
 
@@ -122,7 +132,7 @@ public final class ChestSortNetworking {
 
                 if (p1 != null && p2 != null && p1.dimensionId().equals(p2.dimensionId())) {
                     Identifier dimIdentifier = Identifier.tryParse(p1.dimensionId());
-                    ServerWorld world = dimIdentifier == null ? null : context.server().getWorld(net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD, dimIdentifier));
+                    ServerLevel world = dimIdentifier == null ? null : context.server().getLevel(ResourceKey.create(Registries.DIMENSION, dimIdentifier));
                     if (world != null) {
                         blockCount = WandSelectionUtil.volume(p1.pos(), p2.pos());
                         containerCount = WandSelectionUtil.findLoadedContainerCanonicalPosLongsInBox(world, p1.pos(), p2.pos()).size();
@@ -134,17 +144,17 @@ public final class ChestSortNetworking {
                 var setPos = which == 1 ? state.getWandPos1(uuid) : state.getWandPos2(uuid);
                 if (setPos != null) {
                     BlockPos bp = setPos.pos();
-                    net.minecraft.text.MutableText msg = net.minecraft.text.Text.literal("[CS] ").formatted(net.minecraft.util.Formatting.GOLD)
-                        .append(net.minecraft.text.Text.literal("Wand " + label + ": ").formatted(net.minecraft.util.Formatting.GRAY))
-                        .append(net.minecraft.text.Text.literal(bp.getX() + " " + bp.getY() + " " + bp.getZ()).formatted(net.minecraft.util.Formatting.YELLOW));
+                    MutableComponent msg = Component.literal("[CS] ").withStyle(ChatFormatting.GOLD)
+                        .append(Component.literal("Wand " + label + ": ").withStyle(ChatFormatting.GRAY))
+                        .append(Component.literal(bp.getX() + " " + bp.getY() + " " + bp.getZ()).withStyle(ChatFormatting.YELLOW));
                     if (blockCount > 0L) {
-                        msg = msg.append(net.minecraft.text.Text.literal("  Area: ").formatted(net.minecraft.util.Formatting.GRAY))
-                            .append(net.minecraft.text.Text.literal(String.valueOf(blockCount)).formatted(net.minecraft.util.Formatting.YELLOW))
-                            .append(net.minecraft.text.Text.literal(" blocks, ").formatted(net.minecraft.util.Formatting.GRAY))
-                            .append(net.minecraft.text.Text.literal(String.valueOf(containerCount)).formatted(net.minecraft.util.Formatting.YELLOW))
-                            .append(net.minecraft.text.Text.literal(" containers").formatted(net.minecraft.util.Formatting.GRAY));
+                        msg = msg.append(Component.literal("  Area: ").withStyle(ChatFormatting.GRAY))
+                            .append(Component.literal(String.valueOf(blockCount)).withStyle(ChatFormatting.YELLOW))
+                            .append(Component.literal(" blocks, ").withStyle(ChatFormatting.GRAY))
+                            .append(Component.literal(String.valueOf(containerCount)).withStyle(ChatFormatting.YELLOW))
+                            .append(Component.literal(" containers").withStyle(ChatFormatting.GRAY));
                     }
-                    player.sendMessage(msg, true);
+                    player.sendOverlayMessage(msg);
                 }
 
                 ServerPlayNetworking.send(player, new WandSelectionPayload(
@@ -166,13 +176,13 @@ public final class ChestSortNetworking {
                 ChestSortState state = ChestSortState.get(context.server());
 
                 Identifier dimIdentifier = Identifier.tryParse(payload.dimensionId());
-                ServerWorld world = dimIdentifier == null ? null : context.server().getWorld(net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD, dimIdentifier));
+                ServerLevel world = dimIdentifier == null ? null : context.server().getLevel(ResourceKey.create(Registries.DIMENSION, dimIdentifier));
                 if (world == null) {
                     state.setFilter(payload.dimensionId(), payload.posLong(), payload.filterItems());
                     return;
                 }
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
+                BlockPos pos = BlockPos.of(payload.posLong());
                 BlockEntity be = world.getBlockEntity(pos);
                 if (be == null) {
                     state.setFilter(payload.dimensionId(), payload.posLong(), payload.filterItems());
@@ -189,13 +199,13 @@ public final class ChestSortNetworking {
                 ChestSortState state = ChestSortState.get(context.server());
 
                 Identifier dimIdentifier = Identifier.tryParse(payload.dimensionId());
-                ServerWorld world = dimIdentifier == null ? null : context.server().getWorld(net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD, dimIdentifier));
+                ServerLevel world = dimIdentifier == null ? null : context.server().getLevel(ResourceKey.create(Registries.DIMENSION, dimIdentifier));
                 if (world == null) {
                     state.setFilterSpec(payload.dimensionId(), payload.posLong(), payload.filter());
                     return;
                 }
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
+                BlockPos pos = BlockPos.of(payload.posLong());
                 BlockEntity be = world.getBlockEntity(pos);
                 if (be == null) {
                     state.setFilterSpec(payload.dimensionId(), payload.posLong(), payload.filter());
@@ -212,7 +222,7 @@ public final class ChestSortNetworking {
                 ChestSortState state = ChestSortState.get(context.server());
 
                 Identifier dimIdentifier = Identifier.tryParse(payload.dimensionId());
-                ServerWorld world = dimIdentifier == null ? null : context.server().getWorld(net.minecraft.registry.RegistryKey.of(net.minecraft.registry.RegistryKeys.WORLD, dimIdentifier));
+                ServerLevel world = dimIdentifier == null ? null : context.server().getLevel(ResourceKey.create(Registries.DIMENSION, dimIdentifier));
                 if (world == null) {
                     state.setFilterSpec(payload.dimensionId(), payload.posLong(), payload.whitelist());
                     state.setBlacklistSpec(payload.dimensionId(), payload.posLong(), payload.blacklist());
@@ -220,7 +230,7 @@ public final class ChestSortNetworking {
                     return;
                 }
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
+                BlockPos pos = BlockPos.of(payload.posLong());
                 BlockEntity be = world.getBlockEntity(pos);
                 if (be == null) {
                     state.setFilterSpec(payload.dimensionId(), payload.posLong(), payload.whitelist());
@@ -245,11 +255,11 @@ public final class ChestSortNetworking {
                 if (dimIdentifier == null) return;
 
                 // Only allow sorting in the player's current world.
-                ServerWorld world = player.getEntityWorld();
-                if (!world.getRegistryKey().getValue().equals(dimIdentifier)) return;
+                ServerLevel world = player.level();
+                if (!world.dimension().identifier().equals(dimIdentifier)) return;
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
-                if (player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
+                BlockPos pos = BlockPos.of(payload.posLong());
+                if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
 
                 BlockEntity be = world.getBlockEntity(pos);
                 if (!(be instanceof ChestBlockEntity) && !(be instanceof BarrelBlockEntity)) return;
@@ -257,8 +267,8 @@ public final class ChestSortNetworking {
                 long canonicalPosLong = ContainerCanonicalizer.canonicalize(world, pos, be).posLong();
 
                 // Sort into the currently opened container inventory.
-                if (!(player.currentScreenHandler instanceof net.minecraft.screen.GenericContainerScreenHandler handler)) return;
-                Inventory containerInv = handler.getInventory();
+                if (!(player.containerMenu instanceof net.minecraft.world.inventory.ChestMenu handler)) return;
+                Container containerInv = handler.getContainer();
 
                 ChestSortState state = ChestSortState.get(context.server());
                 ContainerFilterSpec filter = state.getFilterSpec(payload.dimensionId(), canonicalPosLong);
@@ -268,7 +278,7 @@ public final class ChestSortNetworking {
                         payload.dimensionId(),
                         canonicalPosLong,
                         SortResultPayload.KIND_SORT,
-                        state.getAutosortMode(player.getUuidAsString()),
+                        state.getAutosortMode(player.getStringUUID()),
                         false,
                         0L,
                         0,
@@ -283,7 +293,7 @@ public final class ChestSortNetworking {
                         payload.dimensionId(),
                         canonicalPosLong,
                         SortResultPayload.KIND_SORT,
-                        state.getAutosortMode(player.getUuidAsString()),
+                        state.getAutosortMode(player.getStringUUID()),
                         filter.autosort(),
                         0L,
                         0,
@@ -298,7 +308,7 @@ public final class ChestSortNetworking {
 
                 SortOperationResult result = sortMatchingIntoDetailed(
                     state,
-                    player.getUuidAsString(),
+                    player.getStringUUID(),
                     payload.dimensionId(),
                     canonicalPosLong,
                     player.getInventory(),
@@ -310,7 +320,7 @@ public final class ChestSortNetworking {
                     whitelistPriority
                 );
                 if (result.movedTotal > 0) {
-                    player.currentScreenHandler.sendContentUpdates();
+                    player.containerMenu.sendAllDataToRemote();
                     // Update snapshot for this container after sorting.
                     state.updateFromBlockEntity(world, () -> canonicalPosLong, containerInv, be instanceof ChestBlockEntity ? "chest" : "barrel");
                 }
@@ -319,7 +329,7 @@ public final class ChestSortNetworking {
                     payload.dimensionId(),
                     canonicalPosLong,
                     SortResultPayload.KIND_SORT,
-                    state.getAutosortMode(player.getUuidAsString()),
+                    state.getAutosortMode(player.getStringUUID()),
                     filter.autosort(),
                     result.undoId,
                     result.movedTotal,
@@ -337,19 +347,19 @@ public final class ChestSortNetworking {
                 if (dimIdentifier == null) return;
 
                 // Only allow organizing in the player's current world.
-                ServerWorld world = player.getEntityWorld();
-                if (!world.getRegistryKey().getValue().equals(dimIdentifier)) return;
+                ServerLevel world = player.level();
+                if (!world.dimension().identifier().equals(dimIdentifier)) return;
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
-                if (player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
+                BlockPos pos = BlockPos.of(payload.posLong());
+                if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
 
                 BlockEntity be = world.getBlockEntity(pos);
                 if (!(be instanceof ChestBlockEntity) && !(be instanceof BarrelBlockEntity)) return;
 
                 long canonicalPosLong = ContainerCanonicalizer.canonicalize(world, pos, be).posLong();
 
-                if (!(player.currentScreenHandler instanceof net.minecraft.screen.GenericContainerScreenHandler handler)) return;
-                Inventory containerInv = handler.getInventory();
+                if (!(player.containerMenu instanceof net.minecraft.world.inventory.ChestMenu handler)) return;
+                Container containerInv = handler.getContainer();
 
                 ChestSortState state = ChestSortState.get(context.server());
 
@@ -365,9 +375,9 @@ public final class ChestSortNetworking {
                 List<SortResultPayload.SortLine> lines = summarizeContainer(after);
 
                 if (changedSlots > 0) {
-                    undoId = state.nextUndoId(player.getUuidAsString());
+                    undoId = state.nextUndoId(player.getStringUUID());
                     // Reuse the undo mechanism: snapshot player/container before and after.
-                    state.setLastSortUndo(player.getUuidAsString(), new ChestSortState.SortUndoTransaction(
+                    state.setLastSortUndo(player.getStringUUID(), new ChestSortState.SortUndoTransaction(
                         payload.dimensionId(),
                         canonicalPosLong,
                         undoId,
@@ -379,7 +389,7 @@ public final class ChestSortNetworking {
                         after
                     ));
 
-                    player.currentScreenHandler.sendContentUpdates();
+                    player.containerMenu.sendAllDataToRemote();
                     state.updateFromBlockEntity(world, () -> canonicalPosLong, containerInv, be instanceof ChestBlockEntity ? "chest" : "barrel");
                 }
 
@@ -387,7 +397,7 @@ public final class ChestSortNetworking {
                     payload.dimensionId(),
                     canonicalPosLong,
                     SortResultPayload.KIND_ORGANIZE,
-                    state.getAutosortMode(player.getUuidAsString()),
+                    state.getAutosortMode(player.getStringUUID()),
                     false,
                     undoId,
                     changedSlots,
@@ -404,22 +414,22 @@ public final class ChestSortNetworking {
                 Identifier dimIdentifier = Identifier.tryParse(payload.dimensionId());
                 if (dimIdentifier == null) return;
 
-                ServerWorld world = player.getEntityWorld();
-                if (!world.getRegistryKey().getValue().equals(dimIdentifier)) return;
+                ServerLevel world = player.level();
+                if (!world.dimension().identifier().equals(dimIdentifier)) return;
 
-                BlockPos pos = BlockPos.fromLong(payload.posLong());
-                if (player.squaredDistanceTo(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
+                BlockPos pos = BlockPos.of(payload.posLong());
+                if (player.distanceToSqr(pos.getX() + 0.5, pos.getY() + 0.5, pos.getZ() + 0.5) > 64.0) return;
 
                 BlockEntity be = world.getBlockEntity(pos);
                 if (!(be instanceof ChestBlockEntity) && !(be instanceof BarrelBlockEntity)) return;
 
                 long canonicalPosLong = ContainerCanonicalizer.canonicalize(world, pos, be).posLong();
 
-                if (!(player.currentScreenHandler instanceof net.minecraft.screen.GenericContainerScreenHandler handler)) return;
-                Inventory containerInv = handler.getInventory();
+                if (!(player.containerMenu instanceof net.minecraft.world.inventory.ChestMenu handler)) return;
+                Container containerInv = handler.getContainer();
 
                 ChestSortState state = ChestSortState.get(context.server());
-                ChestSortState.SortUndoTransaction tx = state.getLastSortUndo(player.getUuidAsString());
+                ChestSortState.SortUndoTransaction tx = state.getLastSortUndo(player.getStringUUID());
                 if (tx == null) return;
                 if (tx.undoId() != payload.undoId()) return;
                 if (!payload.dimensionId().equals(tx.dimensionId())) return;
@@ -427,15 +437,15 @@ public final class ChestSortNetworking {
 
                 restoreSnapshot(player.getInventory(), tx.playerBefore());
                 restoreSnapshot(containerInv, tx.containerBefore());
-                player.currentScreenHandler.sendContentUpdates();
-                state.clearLastSortUndo(player.getUuidAsString());
+                player.containerMenu.sendAllDataToRemote();
+                state.clearLastSortUndo(player.getStringUUID());
                 state.updateFromBlockEntity(world, () -> canonicalPosLong, containerInv, be instanceof ChestBlockEntity ? "chest" : "barrel");
 
                 ServerPlayNetworking.send(player, new SortResultPayload(
                     payload.dimensionId(),
                     canonicalPosLong,
                     SortResultPayload.KIND_UNDO,
-                    state.getAutosortMode(player.getUuidAsString()),
+                    state.getAutosortMode(player.getStringUUID()),
                     false,
                     0L,
                     tx.movedTotal(),
@@ -484,7 +494,7 @@ public final class ChestSortNetworking {
                     var whitelists = list == null ? null : list.whitelists();
                     var blacklists = list == null ? null : list.blacklists();
                     if (whitelists == null || whitelists.isEmpty()) {
-                        player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: empty presetList").formatted(net.minecraft.util.Formatting.RED), false);
+                        player.sendSystemMessage(Component.literal("[CS] Invalid preset import: empty presetList").withStyle(ChatFormatting.RED));
                         return;
                     }
 
@@ -508,14 +518,14 @@ public final class ChestSortNetworking {
                     }
 
                     if (imported <= 0) {
-                        player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: empty presetList").formatted(net.minecraft.util.Formatting.RED), false);
+                        player.sendSystemMessage(Component.literal("[CS] Invalid preset import: empty presetList").withStyle(ChatFormatting.RED));
                         return;
                     }
 
                     broadcastPresets(context.server());
                     sendPresetsTo(player);
 
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Imported " + imported + " preset" + (imported == 1 ? "" : "s") + ".").formatted(net.minecraft.util.Formatting.GREEN), false);
+                    player.sendSystemMessage(Component.literal("[CS] Imported " + imported + " preset" + (imported == 1 ? "" : "s") + ".").withStyle(ChatFormatting.GREEN));
                     if (!firstImportedName.isEmpty()) {
                         ServerPlayNetworking.send(player, new OpenPresetUiPayload(OpenPresetUiPayload.MODE_EDIT, firstImportedName));
                     }
@@ -528,13 +538,13 @@ public final class ChestSortNetworking {
                 try {
                     decoded = Cs2StringCodec.decodePresetImport(payload.data());
                 } catch (IllegalArgumentException e) {
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: " + e.getMessage()).formatted(net.minecraft.util.Formatting.RED), false);
+                    player.sendSystemMessage(Component.literal("[CS] Invalid preset import: " + e.getMessage()).withStyle(ChatFormatting.RED));
                     return;
                 }
 
                 String name = decoded.name() == null ? "" : decoded.name().trim();
                 if (name.isEmpty()) {
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: missing preset name").formatted(net.minecraft.util.Formatting.RED), false);
+                    player.sendSystemMessage(Component.literal("[CS] Invalid preset import: missing preset name").withStyle(ChatFormatting.RED));
                     return;
                 }
 
@@ -542,7 +552,7 @@ public final class ChestSortNetworking {
                 ContainerFilterSpec wl = decoded.whitelist();
                 ContainerFilterSpec bl = decoded.blacklist();
                 if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) {
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: empty preset").formatted(net.minecraft.util.Formatting.RED), false);
+                    player.sendSystemMessage(Component.literal("[CS] Invalid preset import: empty preset").withStyle(ChatFormatting.RED));
                     return;
                 }
 
@@ -552,7 +562,7 @@ public final class ChestSortNetworking {
                 broadcastPresets(context.server());
 
                 sendPresetsTo(player);
-                player.sendMessage(net.minecraft.text.Text.literal("[CS] Imported preset: " + actual).formatted(net.minecraft.util.Formatting.GREEN), false);
+                player.sendSystemMessage(Component.literal("[CS] Imported preset: " + actual).withStyle(ChatFormatting.GREEN));
                 ServerPlayNetworking.send(player, new OpenPresetUiPayload(OpenPresetUiPayload.MODE_EDIT, actual));
             });
         });
@@ -567,7 +577,7 @@ public final class ChestSortNetworking {
                 List<ContainerFilterSpec> specs = payload.specs() == null ? List.of() : payload.specs();
                 int count = Math.min(names.size(), specs.size());
                 if (count <= 0) {
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: nothing selected").formatted(net.minecraft.util.Formatting.RED), false);
+                    player.sendSystemMessage(Component.literal("[CS] Invalid preset import: nothing selected").withStyle(ChatFormatting.RED));
                     return;
                 }
 
@@ -586,14 +596,14 @@ public final class ChestSortNetworking {
                 }
 
                 if (imported <= 0) {
-                    player.sendMessage(net.minecraft.text.Text.literal("[CS] Invalid preset import: nothing selected").formatted(net.minecraft.util.Formatting.RED), false);
+                    player.sendSystemMessage(Component.literal("[CS] Invalid preset import: nothing selected").withStyle(ChatFormatting.RED));
                     return;
                 }
 
                 broadcastPresets(context.server());
                 sendPresetsTo(player);
 
-                player.sendMessage(net.minecraft.text.Text.literal("[CS] Imported " + imported + " preset" + (imported == 1 ? "" : "s") + ".").formatted(net.minecraft.util.Formatting.GREEN), false);
+                player.sendSystemMessage(Component.literal("[CS] Imported " + imported + " preset" + (imported == 1 ? "" : "s") + ".").withStyle(ChatFormatting.GREEN));
                 if (!firstImportedName.isEmpty()) {
                     ServerPlayNetworking.send(player, new OpenPresetUiPayload(OpenPresetUiPayload.MODE_EDIT, firstImportedName));
                 }
@@ -619,8 +629,8 @@ public final class ChestSortNetworking {
         String playerUuid,
         String dimId,
         long posLong,
-        net.minecraft.entity.player.PlayerInventory playerInv,
-        Inventory containerInv,
+        Inventory playerInv,
+        Container containerInv,
         ContainerFilterSpec baseWhitelist,
         ContainerFilterSpec effectiveWhitelist,
         ContainerFilterSpec baseBlacklist,
@@ -661,8 +671,8 @@ public final class ChestSortNetworking {
     }
 
     private static int sortMatchingInto(
-        net.minecraft.entity.player.PlayerInventory playerInv,
-        Inventory containerInv,
+        Inventory playerInv,
+        Container containerInv,
         ContainerFilterSpec whitelist,
         ContainerFilterSpec blacklist,
         boolean whitelistPriority,
@@ -682,14 +692,14 @@ public final class ChestSortNetworking {
 
         int moved = 0;
 
-        for (int i = 0; i < playerInv.size(); i++) {
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
             if (state != null && playerUuid != null && !playerUuid.isEmpty() && state.isSlotLocked(playerUuid, i)) {
                 continue;
             }
-            ItemStack stack = playerInv.getStack(i);
+            ItemStack stack = playerInv.getItem(i);
             if (stack.isEmpty()) continue;
 
-            String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 
             String blMode = state != null && playerUuid != null && !playerUuid.isEmpty()
                 ? state.getBlacklistMode(playerUuid)
@@ -726,7 +736,7 @@ public final class ChestSortNetworking {
 
             int before = stack.getCount();
             ItemStack remainder = insertInto(containerInv, stack);
-            playerInv.setStack(i, remainder);
+            playerInv.setItem(i, remainder);
             int movedHere = (before - remainder.getCount());
             moved += movedHere;
 
@@ -752,7 +762,7 @@ public final class ChestSortNetworking {
         List<TagFilterRuntime> baseTags = compileTagFilters(base.tags());
         for (TagFilterRuntime tf : baseTags) {
             if (tf.matches(stack, itemId)) {
-                out.add("Matched tag filter #" + tf.tagKey().id());
+                out.add("Matched tag filter #" + tf.tagKey().location());
             }
         }
 
@@ -768,7 +778,7 @@ public final class ChestSortNetworking {
                 List<TagFilterRuntime> presetTags = compileTagFilters(p.tags());
                 for (TagFilterRuntime tf : presetTags) {
                     if (tf.matches(stack, itemId)) {
-                        out.add("Matched preset \"" + presetName + "\" containing tag filter #" + tf.tagKey().id());
+                        out.add("Matched preset \"" + presetName + "\" containing tag filter #" + tf.tagKey().location());
                     }
                 }
             }
@@ -780,23 +790,23 @@ public final class ChestSortNetworking {
         return out;
     }
 
-    private static List<ItemStack> snapshot(Inventory inv) {
-        ArrayList<ItemStack> out = new ArrayList<>(inv.size());
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack s = inv.getStack(i);
+    private static List<ItemStack> snapshot(Container inv) {
+        ArrayList<ItemStack> out = new ArrayList<>(inv.getContainerSize());
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack s = inv.getItem(i);
             out.add(s == null ? ItemStack.EMPTY : s.copy());
         }
         return out;
     }
 
-    private static void restoreSnapshot(Inventory inv, List<ItemStack> snap) {
+    private static void restoreSnapshot(Container inv, List<ItemStack> snap) {
         if (snap == null) return;
-        int n = Math.min(inv.size(), snap.size());
+        int n = Math.min(inv.getContainerSize(), snap.size());
         for (int i = 0; i < n; i++) {
             ItemStack s = snap.get(i);
-            inv.setStack(i, s == null ? ItemStack.EMPTY : s.copy());
+            inv.setItem(i, s == null ? ItemStack.EMPTY : s.copy());
         }
-        inv.markDirty();
+        inv.setChanged();
     }
 
     private static final class SortDetailAccumulator {
@@ -834,19 +844,19 @@ public final class ChestSortNetworking {
             ItemStack b = after.get(i);
             if (a == null) a = ItemStack.EMPTY;
             if (b == null) b = ItemStack.EMPTY;
-            if (!ItemStack.areItemsAndComponentsEqual(a, b) || a.getCount() != b.getCount()) {
+            if (!ItemStack.matches(a, b) || a.getCount() != b.getCount()) {
                 changed++;
             }
         }
         return changed;
     }
 
-    private static void organizeContainer(Inventory containerInv) {
+    private static void organizeContainer(Container containerInv) {
         if (containerInv == null) return;
 
         ArrayList<ItemStack> stacks = new ArrayList<>();
-        for (int i = 0; i < containerInv.size(); i++) {
-            ItemStack s = containerInv.getStack(i);
+        for (int i = 0; i < containerInv.getContainerSize(); i++) {
+            ItemStack s = containerInv.getItem(i);
             if (s == null || s.isEmpty()) continue;
             stacks.add(s.copy());
         }
@@ -858,7 +868,7 @@ public final class ChestSortNetworking {
         for (ItemStack s : stacks) {
             boolean merged = false;
             for (int g = 0; g < protos.size(); g++) {
-                if (ItemStack.areItemsAndComponentsEqual(protos.get(g), s)) {
+                if (ItemStack.matches(protos.get(g), s)) {
                     totals.set(g, totals.get(g) + s.getCount());
                     merged = true;
                     break;
@@ -876,7 +886,7 @@ public final class ChestSortNetworking {
         for (int i = 0; i < protos.size(); i++) {
             ItemStack proto = protos.get(i);
             int total = totals.get(i);
-            int max = Math.min(proto.getMaxCount(), containerInv.getMaxCountPerStack());
+            int max = Math.min(proto.getMaxStackSize(), containerInv.getMaxStackSize());
             int remaining = total;
             while (remaining > 0) {
                 int take = Math.min(max, remaining);
@@ -889,13 +899,13 @@ public final class ChestSortNetworking {
 
         // Write back sequentially.
         int slot = 0;
-        for (; slot < containerInv.size() && slot < packed.size(); slot++) {
-            containerInv.setStack(slot, packed.get(slot));
+        for (; slot < containerInv.getContainerSize() && slot < packed.size(); slot++) {
+            containerInv.setItem(slot, packed.get(slot));
         }
-        for (; slot < containerInv.size(); slot++) {
-            containerInv.setStack(slot, ItemStack.EMPTY);
+        for (; slot < containerInv.getContainerSize(); slot++) {
+            containerInv.setItem(slot, ItemStack.EMPTY);
         }
-        containerInv.markDirty();
+        containerInv.setChanged();
     }
 
     private static List<SortResultPayload.SortLine> summarizeContainer(List<ItemStack> after) {
@@ -904,7 +914,7 @@ public final class ChestSortNetworking {
         java.util.LinkedHashMap<String, Integer> totals = new java.util.LinkedHashMap<>();
         for (ItemStack s : after) {
             if (s == null || s.isEmpty()) continue;
-            String id = Registries.ITEM.getId(s.getItem()).toString();
+            String id = BuiltInRegistries.ITEM.getKey(s.getItem()).toString();
             totals.merge(id, s.getCount(), Integer::sum);
         }
 
@@ -916,9 +926,9 @@ public final class ChestSortNetworking {
         return out;
     }
 
-    public static void sendPresetsTo(net.minecraft.server.network.ServerPlayerEntity player) {
+    public static void sendPresetsTo(net.minecraft.server.level.ServerPlayer player) {
         if (player == null) return;
-        ChestSortState state = ChestSortState.get(((net.minecraft.server.world.ServerWorld) player.getEntityWorld()).getServer());
+        ChestSortState state = ChestSortState.get(((net.minecraft.server.level.ServerLevel) player.level()).getServer());
 
         Map<String, ContainerFilterSpec> presets = state.getPresets();
         Map<String, ContainerFilterSpec> presetBlacklists = state.getPresetBlacklists();
@@ -940,32 +950,32 @@ public final class ChestSortNetworking {
         ServerPlayNetworking.send(player, new PresetSyncPayload(names, specs));
     }
 
-    public static void sendLockedSlotsTo(net.minecraft.server.network.ServerPlayerEntity player) {
+    public static void sendLockedSlotsTo(net.minecraft.server.level.ServerPlayer player) {
         if (player == null) return;
-        ChestSortState state = ChestSortState.get(((net.minecraft.server.world.ServerWorld) player.getEntityWorld()).getServer());
-        List<Integer> locked = state.getLockedSlots(player.getUuidAsString());
+        ChestSortState state = ChestSortState.get(((net.minecraft.server.level.ServerLevel) player.level()).getServer());
+        List<Integer> locked = state.getLockedSlots(player.getStringUUID());
         ServerPlayNetworking.send(player, new LockedSlotsSyncPayload(locked));
     }
 
     public static void broadcastPresets(net.minecraft.server.MinecraftServer server) {
         if (server == null) return;
-        for (var player : server.getPlayerManager().getPlayerList()) {
+        for (var player : server.getPlayerList().getPlayers()) {
             sendPresetsTo(player);
         }
     }
 
-    public static int sortMatchingInto(net.minecraft.entity.player.PlayerInventory playerInv, Inventory containerInv, ContainerFilterSpec filter) {
+    public static int sortMatchingInto(Inventory playerInv, Container containerInv, ContainerFilterSpec filter) {
         Set<String> allowedItemIds = new HashSet<>(filter.items() == null ? List.of() : filter.items());
 
         List<TagFilterRuntime> tagFilters = compileTagFilters(filter.tags());
 
         int moved = 0;
 
-        for (int i = 0; i < playerInv.size(); i++) {
-            ItemStack stack = playerInv.getStack(i);
+        for (int i = 0; i < playerInv.getContainerSize(); i++) {
+            ItemStack stack = playerInv.getItem(i);
             if (stack.isEmpty()) continue;
 
-            String itemId = Registries.ITEM.getId(stack.getItem()).toString();
+            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 
             boolean allowed = allowedItemIds.contains(itemId);
             if (!allowed) {
@@ -981,7 +991,7 @@ public final class ChestSortNetworking {
 
             int before = stack.getCount();
             ItemStack remainder = insertInto(containerInv, stack);
-            playerInv.setStack(i, remainder);
+            playerInv.setItem(i, remainder);
             moved += (before - remainder.getCount());
         }
 
@@ -998,7 +1008,7 @@ public final class ChestSortNetworking {
             String idStr = raw.startsWith("#") ? raw.substring(1) : raw;
             Identifier id = Identifier.tryParse(idStr);
             if (id == null) continue;
-            TagKey<net.minecraft.item.Item> key = TagKey.of(RegistryKeys.ITEM, id);
+            TagKey<net.minecraft.world.item.Item> key = TagKey.create(Registries.ITEM, id);
 
             Set<String> exceptions = new HashSet<>();
             if (tag.exceptions() != null) {
@@ -1013,46 +1023,46 @@ public final class ChestSortNetworking {
         return out;
     }
 
-    public record TagFilterRuntime(TagKey<net.minecraft.item.Item> tagKey, Set<String> exceptions) {
+    public record TagFilterRuntime(TagKey<net.minecraft.world.item.Item> tagKey, Set<String> exceptions) {
         public boolean matches(ItemStack stack, String itemId) {
             if (exceptions != null && exceptions.contains(itemId)) return false;
-            return stack.isIn(tagKey);
+            return stack.is(tagKey);
         }
     }
 
-    private static ItemStack insertInto(Inventory container, ItemStack stack) {
+    private static ItemStack insertInto(Container container, ItemStack stack) {
         if (stack.isEmpty()) return stack;
         ItemStack remaining = stack.copy();
 
         // First pass: merge into existing stacks.
-        for (int i = 0; i < container.size(); i++) {
-            ItemStack existing = container.getStack(i);
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack existing = container.getItem(i);
             if (existing.isEmpty()) continue;
-            if (!ItemStack.areItemsAndComponentsEqual(existing, remaining)) continue;
+            if (!ItemStack.matches(existing, remaining)) continue;
 
-            int max = Math.min(existing.getMaxCount(), container.getMaxCountPerStack());
+            int max = Math.min(existing.getMaxStackSize(), container.getMaxStackSize());
             int canAdd = max - existing.getCount();
             if (canAdd <= 0) continue;
 
             int toMove = Math.min(canAdd, remaining.getCount());
-            existing.increment(toMove);
-            remaining.decrement(toMove);
-            container.setStack(i, existing);
+            existing.grow(toMove);
+            remaining.shrink(toMove);
+            container.setItem(i, existing);
             if (remaining.isEmpty()) return ItemStack.EMPTY;
         }
 
         // Second pass: fill empty slots.
-        for (int i = 0; i < container.size(); i++) {
-            ItemStack existing = container.getStack(i);
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack existing = container.getItem(i);
             if (!existing.isEmpty()) continue;
 
-            int max = Math.min(remaining.getMaxCount(), container.getMaxCountPerStack());
+            int max = Math.min(remaining.getMaxStackSize(), container.getMaxStackSize());
             int toMove = Math.min(max, remaining.getCount());
 
             ItemStack placed = remaining.copy();
             placed.setCount(toMove);
-            container.setStack(i, placed);
-            remaining.decrement(toMove);
+            container.setItem(i, placed);
+            remaining.shrink(toMove);
             if (remaining.isEmpty()) return ItemStack.EMPTY;
         }
 

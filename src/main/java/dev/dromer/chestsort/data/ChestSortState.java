@@ -13,24 +13,24 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.util.ContainerCanonicalizer;
-import net.minecraft.block.entity.BarrelBlockEntity;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.datafixer.DataFixTypes;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
+import net.minecraft.world.level.block.entity.BarrelBlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.util.datafix.DataFixTypes;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.PersistentState;
-import net.minecraft.world.PersistentStateManager;
-import net.minecraft.world.PersistentStateType;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.level.saveddata.SavedData;
+import net.minecraft.world.level.storage.SavedDataStorage;
+import net.minecraft.world.level.saveddata.SavedDataType;
+import net.minecraft.world.level.chunk.LevelChunk;
 
-public class ChestSortState extends PersistentState {
-    private static final String STATE_ID = "chestsort";
+public class ChestSortState extends SavedData {
+    private static final Identifier STATE_ID = Identifier.withDefaultNamespace("chestsort");
 
     public static final String AUTOSORT_NEVER = "never";
     public static final String AUTOSORT_SELECTED = "selected";
@@ -144,7 +144,7 @@ public class ChestSortState extends PersistentState {
         )
     ));
 
-    public static final PersistentStateType<ChestSortState> TYPE = new PersistentStateType<>(
+    public static final SavedDataType<ChestSortState> TYPE = new SavedDataType<>(
         STATE_ID,
         ChestSortState::new,
         CODEC,
@@ -198,9 +198,9 @@ public class ChestSortState extends PersistentState {
     }
 
     public static ChestSortState get(MinecraftServer server) {
-        ServerWorld overworld = server.getOverworld();
-        PersistentStateManager mgr = overworld.getPersistentStateManager();
-        return mgr.getOrCreate(TYPE);
+        ServerLevel overworld = server.overworld();
+        SavedDataStorage mgr = overworld.getDataStorage();
+        return mgr.computeIfAbsent(TYPE);
     }
 
     public ChestSortState() {
@@ -320,7 +320,7 @@ public class ChestSortState extends PersistentState {
             m = BLACKLIST_MODE_PREVENT_SORT;
         }
         blacklistModeByPlayerUuid.put(playerUuid, m);
-        markDirty();
+        setDirty();
     }
 
     public void setOpenContainer(String playerUuid, String dimId, long posLong) {
@@ -405,7 +405,7 @@ public class ChestSortState extends PersistentState {
             lockedSlotsByPlayerUuid.put(playerUuid, List.copyOf(list));
         }
 
-        markDirty();
+        setDirty();
         return nowLocked;
     }
 
@@ -446,7 +446,7 @@ public class ChestSortState extends PersistentState {
         list.add(t);
 
         itemBlacklistByPlayerUuid.put(playerUuid, List.copyOf(ContainerFilterSpec.normalizeStrings(list)));
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -471,7 +471,7 @@ public class ChestSortState extends PersistentState {
         if (added <= 0) return 0;
 
         itemBlacklistByPlayerUuid.put(playerUuid, List.copyOf(merged));
-        markDirty();
+        setDirty();
         return added;
     }
 
@@ -500,7 +500,7 @@ public class ChestSortState extends PersistentState {
         } else {
             itemBlacklistByPlayerUuid.put(playerUuid, norm);
         }
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -508,7 +508,7 @@ public class ChestSortState extends PersistentState {
         if (playerUuid == null || playerUuid.isEmpty()) return 0;
         List<String> prev = itemBlacklistByPlayerUuid.remove(playerUuid);
         int removed = prev == null ? 0 : prev.size();
-        if (removed > 0) markDirty();
+        if (removed > 0) setDirty();
         return removed;
     }
 
@@ -589,7 +589,7 @@ public class ChestSortState extends PersistentState {
             // Also mirror items into legacy list for backward compatibility.
             legacyFilterItemsByKey.put(k, normalized.items());
         }
-        markDirty();
+        setDirty();
     }
 
     public void setBlacklistSpec(String dimId, long posLong, ContainerFilterSpec spec) {
@@ -601,7 +601,7 @@ public class ChestSortState extends PersistentState {
             // Autosort is a per-container setting stored on the whitelist spec; blacklist ignores it.
             blacklistSpecByKey.put(k, new ContainerFilterSpec(normalized.items(), normalized.tags(), normalized.presets(), false).normalized());
         }
-        markDirty();
+        setDirty();
     }
 
     public void setWhitelistPriority(String dimId, long posLong, boolean whitelistPriority) {
@@ -612,7 +612,7 @@ public class ChestSortState extends PersistentState {
         } else {
             whitelistPriorityByKey.put(k, false);
         }
-        markDirty();
+        setDirty();
     }
 
     public List<String> getFilter(String dimId, long posLong) {
@@ -666,7 +666,7 @@ public class ChestSortState extends PersistentState {
             m = AUTOSORT_SELECTED;
         }
         autosortModeByPlayerUuid.put(playerUuid, m);
-        markDirty();
+        setDirty();
     }
 
     public String getHighlightsMode(String playerUuid) {
@@ -686,13 +686,13 @@ public class ChestSortState extends PersistentState {
         if (HIGHLIGHTS_OFF.equals(m)) {
             clearHighlightsOnNextOpenByPlayerUuid.remove(playerUuid);
         }
-        markDirty();
+        setDirty();
     }
 
     public void armClearHighlightsOnNextOpen(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         clearHighlightsOnNextOpenByPlayerUuid.put(playerUuid, Boolean.TRUE);
-        markDirty();
+        setDirty();
     }
 
     public boolean shouldClearHighlightsOnNextOpen(String playerUuid) {
@@ -703,12 +703,12 @@ public class ChestSortState extends PersistentState {
     public void clearHighlightsOnNextOpen(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         clearHighlightsOnNextOpenByPlayerUuid.remove(playerUuid);
-        markDirty();
+        setDirty();
     }
 
     public record WandPos(String dimensionId, long posLong) {
         public BlockPos pos() {
-            return BlockPos.fromLong(posLong);
+            return BlockPos.of(posLong);
         }
     }
 
@@ -725,7 +725,7 @@ public class ChestSortState extends PersistentState {
         } else {
             wandItemIdByPlayerUuid.put(playerUuid, v);
         }
-        markDirty();
+        setDirty();
     }
 
     private static String wandPosKey(String dimId, long posLong) {
@@ -749,39 +749,39 @@ public class ChestSortState extends PersistentState {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         if (dimId == null || dimId.isEmpty()) return;
         wandPos1KeyByPlayerUuid.put(playerUuid, wandPosKey(dimId, posLong));
-        markDirty();
+        setDirty();
     }
 
     public void setWandPos2(String playerUuid, String dimId, long posLong) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         if (dimId == null || dimId.isEmpty()) return;
         wandPos2KeyByPlayerUuid.put(playerUuid, wandPosKey(dimId, posLong));
-        markDirty();
+        setDirty();
     }
 
     public void clearWandPos1(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         wandPos1KeyByPlayerUuid.remove(playerUuid);
-        markDirty();
+        setDirty();
     }
 
     public void clearWandPos2(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         wandPos2KeyByPlayerUuid.remove(playerUuid);
-        markDirty();
+        setDirty();
     }
 
     public void clearWandSelection(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         wandPos1KeyByPlayerUuid.remove(playerUuid);
         wandPos2KeyByPlayerUuid.remove(playerUuid);
-        markDirty();
+        setDirty();
     }
 
     public void clearWandClipboard(String playerUuid) {
         if (playerUuid == null || playerUuid.isEmpty()) return;
         wandClipboardByPlayerUuid.remove(playerUuid);
-        markDirty();
+        setDirty();
     }
 
     public WandPos getWandPos1(String playerUuid) {
@@ -801,7 +801,7 @@ public class ChestSortState extends PersistentState {
         } else {
             wandClipboardByPlayerUuid.put(playerUuid, spec.normalized());
         }
-        markDirty();
+        setDirty();
     }
 
     public ContainerFilterSpec getWandClipboard(String playerUuid) {
@@ -812,7 +812,7 @@ public class ChestSortState extends PersistentState {
 
     public void setLastFullScanMs(long ms) {
         this.lastFullScanMs = ms;
-        markDirty();
+        setDirty();
     }
 
     public long getLastFullScanMs() {
@@ -821,7 +821,7 @@ public class ChestSortState extends PersistentState {
 
     public void setLastFindItem(String playerUuid, String itemId) {
         lastFindItemByPlayerUuid.put(playerUuid, itemId);
-        markDirty();
+        setDirty();
     }
 
     public String getLastFindItem(String playerUuid) {
@@ -860,7 +860,7 @@ public class ChestSortState extends PersistentState {
         normalized = new ContainerFilterSpec(normalized.items(), normalized.tags(), List.of(), false).normalized();
         presetsByName.put(n, normalized);
         presetBlacklistByName.putIfAbsent(n, new ContainerFilterSpec(List.of(), List.of(), List.of(), false).normalized());
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -883,7 +883,7 @@ public class ChestSortState extends PersistentState {
         } else {
             presetBlacklistByName.putIfAbsent(n, new ContainerFilterSpec(List.of(), List.of(), List.of(), false).normalized());
         }
-        markDirty();
+        setDirty();
     }
 
     public boolean removePreset(String name) {
@@ -892,7 +892,7 @@ public class ChestSortState extends PersistentState {
         ContainerFilterSpec removed = presetsByName.remove(n);
         presetBlacklistByName.remove(n);
         if (removed != null) {
-            markDirty();
+            setDirty();
             return true;
         }
         return false;
@@ -912,7 +912,7 @@ public class ChestSortState extends PersistentState {
         if (bl != null) {
             presetBlacklistByName.put(b, bl);
         }
-        markDirty();
+        setDirty();
         return true;
     }
 
@@ -923,22 +923,22 @@ public class ChestSortState extends PersistentState {
         // Dedupe multi-block containers (double chests) by canonical position.
         java.util.HashSet<String> seen = new java.util.HashSet<>();
 
-        for (ServerWorld world : server.getWorlds()) {
-            String dimId = world.getRegistryKey().getValue().toString();
+        for (ServerLevel world : server.getAllLevels()) {
+            String dimId = world.dimension().identifier().toString();
 
-            world.getChunkManager().chunkLoadingManager.forEachChunk((WorldChunk chunk) -> {
+            world.getChunkSource().chunkMap.forEachBlockTickingChunk((LevelChunk chunk) -> {
                 for (BlockEntity be : chunk.getBlockEntities().values()) {
                     if (be instanceof ChestBlockEntity chest) {
-                        BlockPos pos = chest.getPos();
+                        BlockPos pos = chest.getBlockPos();
                         var canonical = ContainerCanonicalizer.canonicalize(world, pos, chest);
                         String k = key(dimId, canonical.posLong());
                         if (seen.add(k)) {
-                            Inventory inv = canonical.snapshotInventory() == null ? chest : canonical.snapshotInventory();
+                            Container inv = canonical.snapshotInventory() == null ? chest : canonical.snapshotInventory();
                             putSnapshot(dimId, canonical.posLong(), canonical.containerType(), nowMs, snapshotInventory(inv));
                             scanned.incrementAndGet();
                         }
                     } else if (be instanceof BarrelBlockEntity barrel) {
-                        long posLong = barrel.getPos().asLong();
+                        long posLong = barrel.getBlockPos().asLong();
                         String k = key(dimId, posLong);
                         if (seen.add(k)) {
                             putSnapshot(dimId, posLong, "barrel", nowMs, snapshotInventory(barrel));
@@ -950,19 +950,19 @@ public class ChestSortState extends PersistentState {
         }
 
         int totalScanned = scanned.get();
-        if (totalScanned > 0) markDirty();
+        if (totalScanned > 0) setDirty();
         return totalScanned;
     }
 
-    public void updateFromBlockEntity(ServerWorld world, BlockPosLike posLike, Inventory inv, String containerType) {
-        String dimId = world.getRegistryKey().getValue().toString();
+    public void updateFromBlockEntity(ServerLevel world, BlockPosLike posLike, Container inv, String containerType) {
+        String dimId = world.dimension().identifier().toString();
         long nowMs = System.currentTimeMillis();
         putSnapshot(dimId, posLike.asLong(), containerType, nowMs, snapshotInventory(inv));
-        markDirty();
+        setDirty();
     }
 
-    public boolean containerContains(ServerWorld world, long posLong, String itemId) {
-        String dimId = world.getRegistryKey().getValue().toString();
+    public boolean containerContains(ServerLevel world, long posLong, String itemId) {
+        String dimId = world.dimension().identifier().toString();
         ContainerSnapshot snapshot = snapshotsByKey.get(key(dimId, posLong));
         return snapshot != null && snapshot.containsItem(itemId);
     }
@@ -982,12 +982,12 @@ public class ChestSortState extends PersistentState {
         snapshotsByKey.put(key(dimId, posLong), new ContainerSnapshot(dimId, posLong, type, updatedMs, counts));
     }
 
-    private static Map<String, Integer> snapshotInventory(Inventory inv) {
+    private static Map<String, Integer> snapshotInventory(Container inv) {
         Map<String, Integer> counts = new HashMap<>();
-        for (int i = 0; i < inv.size(); i++) {
-            ItemStack stack = inv.getStack(i);
+        for (int i = 0; i < inv.getContainerSize(); i++) {
+            ItemStack stack = inv.getItem(i);
             if (stack == null || stack.isEmpty()) continue;
-            Identifier id = Registries.ITEM.getId(stack.getItem());
+            Identifier id = BuiltInRegistries.ITEM.getKey(stack.getItem());
             String key = id.toString();
             counts.put(key, counts.getOrDefault(key, 0) + stack.getCount());
         }

@@ -7,8 +7,10 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
+import dev.dromer.chestsort.client.ClientAutosortState;
 import dev.dromer.chestsort.client.ClientContainerContext;
 import dev.dromer.chestsort.client.ClientContainerFilterStorage;
+import dev.dromer.chestsort.client.ClientContainerFindIndex;
 import dev.dromer.chestsort.client.ClientHighlightState;
 import dev.dromer.chestsort.client.ClientLastInteractedBlock;
 import dev.dromer.chestsort.client.ClientLockedSlotsState;
@@ -21,34 +23,30 @@ import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
 import dev.dromer.chestsort.net.payload.OpenPresetUiPayload;
-import dev.dromer.chestsort.net.payload.OrganizeRequestPayload;
-import dev.dromer.chestsort.net.payload.SetContainerFiltersPayload;
-import dev.dromer.chestsort.net.payload.SetFilterPayload;
-import dev.dromer.chestsort.net.payload.SetFilterV2Payload;
 import dev.dromer.chestsort.net.payload.SetPresetPayload;
 import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
-import dev.dromer.chestsort.net.payload.SortRequestPayload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
 import dev.dromer.chestsort.net.payload.ToggleLockedSlotPayload;
 import dev.dromer.chestsort.net.payload.UndoSortPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.TagKey;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
+import net.minecraft.resources.Identifier;
 
 
-@Mixin(HandledScreen.class)
+@Mixin(AbstractContainerScreen.class)
 public abstract class HandledScreenMixin {
 
     @Unique
@@ -103,55 +101,58 @@ public abstract class HandledScreenMixin {
     private int chestsort$resultsRowsY;
 
     @Shadow
-    protected int x;
+    protected int leftPos;
 
     @Shadow
-    protected int y;
+    protected int topPos;
 
     @Shadow
-    protected int backgroundWidth;
+    protected int imageWidth;
 
     @Shadow
-    protected net.minecraft.screen.ScreenHandler handler;
+    protected net.minecraft.world.inventory.AbstractContainerMenu menu;
 
     @Unique
     private boolean chestsort$filterMode = false;
 
     @Unique
-    private ButtonWidget chestsort$filterButton;
+    private boolean chestsort$findIndexRecorded = false;
 
     @Unique
-    private ButtonWidget chestsort$whitelistTabButton;
+    private Button chestsort$filterButton;
 
     @Unique
-    private ButtonWidget chestsort$blacklistTabButton;
+    private Button chestsort$whitelistTabButton;
 
     @Unique
-    private ButtonWidget chestsort$importOpenButton;
+    private Button chestsort$blacklistTabButton;
 
     @Unique
-    private ButtonWidget chestsort$exportOpenButton;
+    private Button chestsort$importOpenButton;
 
     @Unique
-    private ButtonWidget chestsort$sortButton;
+    private Button chestsort$exportOpenButton;
 
     @Unique
-    private ButtonWidget chestsort$organizeButton;
+    private Button chestsort$sortButton;
 
     @Unique
-    private ButtonWidget chestsort$autosortButton;
+    private Button chestsort$organizeButton;
 
     @Unique
-    private ButtonWidget chestsort$lockSlotButton;
+    private Button chestsort$autosortButton;
+
+    @Unique
+    private Button chestsort$lockSlotButton;
 
     @Unique
     private boolean chestsort$lockSlotsMode = false;
 
     @Unique
-    private ButtonWidget chestsort$undoButton;
+    private Button chestsort$undoButton;
 
     @Unique
-    private TextFieldWidget chestsort$searchField;
+    private EditBox chestsort$searchField;
 
     @Unique
     private java.util.List<Item> chestsort$allItems;
@@ -268,34 +269,34 @@ public abstract class HandledScreenMixin {
     private boolean chestsort$presetExportPopupOpen = false;
 
     @Unique
-    private TextFieldWidget chestsort$importField;
+    private EditBox chestsort$importField;
 
     @Unique
-    private ButtonWidget chestsort$importConfirmButton;
+    private Button chestsort$importConfirmButton;
 
     @Unique
-    private ButtonWidget chestsort$importCancelButton;
+    private Button chestsort$importCancelButton;
 
     @Unique
-    private TextFieldWidget chestsort$exportField;
+    private EditBox chestsort$exportField;
 
     @Unique
-    private ButtonWidget chestsort$exportCloseButton;
+    private Button chestsort$exportCloseButton;
 
     @Unique
-    private TextFieldWidget chestsort$presetImportField;
+    private EditBox chestsort$presetImportField;
 
     @Unique
-    private ButtonWidget chestsort$presetImportConfirmButton;
+    private Button chestsort$presetImportConfirmButton;
 
     @Unique
-    private ButtonWidget chestsort$presetImportCancelButton;
+    private Button chestsort$presetImportCancelButton;
 
     @Unique
-    private TextFieldWidget chestsort$presetExportField;
+    private EditBox chestsort$presetExportField;
 
     @Unique
-    private ButtonWidget chestsort$presetExportCloseButton;
+    private Button chestsort$presetExportCloseButton;
 
     @Unique
     private String chestsort$presetExportName = "";
@@ -319,7 +320,7 @@ public abstract class HandledScreenMixin {
     private boolean chestsort$editPresetMode = false;
 
     @Unique
-    private ButtonWidget chestsort$editPresetButton;
+    private Button chestsort$editPresetButton;
 
     @Unique
     private static final String CHESTSORT_IMPORT_PREFIX = "cs2:";
@@ -458,7 +459,7 @@ public abstract class HandledScreenMixin {
         chestsort$selectedResultIndex = -1;
 
         if (chestsort$searchField != null) {
-            chestsort$searchField.setText("");
+            chestsort$searchField.setValue("");
             chestsort$updateSearchResults();
         }
         chestsort$clampScroll();
@@ -475,7 +476,7 @@ public abstract class HandledScreenMixin {
             return;
         }
         chestsort$allItems = new java.util.ArrayList<>();
-        for (Item item : Registries.ITEM) {
+        for (Item item : BuiltInRegistries.ITEM) {
             chestsort$allItems.add(item);
         }
     }
@@ -485,7 +486,11 @@ public abstract class HandledScreenMixin {
         chestsort$ensureState();
         chestsort$ensureAllItems();
 
-        String query = chestsort$searchField == null ? "" : chestsort$lc(chestsort$searchField.getText()).trim();
+        String query = chestsort$searchField == null ? "" : chestsort$lc(chestsort$searchField.getValue()).trim();
+        // '@' is an alias for the '&' preset-search prefix.
+        if (query.startsWith("@")) {
+            query = "&" + query.substring(1);
+        }
         if (query.isEmpty()) {
             if (chestsort$tagBrowserMode) {
                 java.util.Set<String> exc = chestsort$getExceptionSetForTag(chestsort$tagBrowserTagId);
@@ -494,7 +499,7 @@ public abstract class HandledScreenMixin {
                 java.util.ArrayList<String> subtitles = new java.util.ArrayList<>(16);
                 for (Item item : chestsort$tagBrowserItems) {
                     if (item != null) {
-                        String itemId = String.valueOf(Registries.ITEM.getId(item));
+                        String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
                         if (!itemId.isEmpty() && exc.contains(itemId)) continue;
                     }
                     items.add(item);
@@ -585,9 +590,9 @@ public abstract class HandledScreenMixin {
             } else {
                 java.util.Set<String> exc = chestsort$getExceptionSetForTag(chestsort$tagBrowserTagId);
                 for (Item item : chestsort$tagBrowserItems) {
-                    var id = Registries.ITEM.getId(item);
+                    var id = BuiltInRegistries.ITEM.getKey(item);
                     String idStr = id == null ? "" : id.toString();
-                    String nameStr = chestsort$lc(Text.translatable(item.getTranslationKey()).getString());
+                    String nameStr = chestsort$lc(Component.translatable(item.getDescriptionId()).getString());
                     if (chestsort$lc(idStr).contains(query) || nameStr.contains(query)) {
                         if (!idStr.isEmpty() && exc.contains(idStr)) continue;
                         resultItems.add(item);
@@ -604,9 +609,9 @@ public abstract class HandledScreenMixin {
             } else {
                 java.util.HashSet<String> already = new java.util.HashSet<>(chestsort$editingFilterItems == null ? java.util.List.of() : chestsort$editingFilterItems);
                 for (Item item : chestsort$allItems) {
-                    var id = Registries.ITEM.getId(item);
+                    var id = BuiltInRegistries.ITEM.getKey(item);
                     String idStr = id == null ? "" : id.toString();
-                    String nameStr = chestsort$lc(Text.translatable(item.getTranslationKey()).getString());
+                    String nameStr = chestsort$lc(Component.translatable(item.getDescriptionId()).getString());
 
                     // Keep already-added entries out of the results.
                     if (!idStr.isEmpty() && already.contains(idStr)) continue;
@@ -671,9 +676,9 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private static String chestsort$formatResultSubtitle(Item item) {
-        String itemId = String.valueOf(Registries.ITEM.getId(item));
-        if (item instanceof net.minecraft.item.BlockItem blockItem) {
-            String blockId = String.valueOf(Registries.BLOCK.getId(blockItem.getBlock()));
+        String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
+        if (item instanceof net.minecraft.world.item.BlockItem blockItem) {
+            String blockId = String.valueOf(BuiltInRegistries.BLOCK.getId(blockItem.getBlock()));
             if (!blockId.isEmpty() && !blockId.equals(itemId)) {
                 return itemId + " | " + blockId;
             }
@@ -684,20 +689,20 @@ public abstract class HandledScreenMixin {
     @Unique
     private void chestsort$updateLayout() {
         chestsort$ensureState();
-        int screenW = MinecraftClient.getInstance().getWindow().getScaledWidth();
-        int screenH = MinecraftClient.getInstance().getWindow().getScaledHeight();
+        int screenW = Minecraft.getInstance().getWindow().getGuiScaledWidth();
+        int screenH = Minecraft.getInstance().getWindow().getGuiScaledHeight();
 
         int availableH = Math.max(0, screenH - (CHESTSORT_PANEL_GAP * 2));
 
         // Keep panels OUTSIDE the handled screen when possible.
         // If there isn't enough room (small window or large GUI scale), shrink the panels to fit.
-        int availableLeft = x - (CHESTSORT_PANEL_GAP * 2);
+        int availableLeft = leftPos - (CHESTSORT_PANEL_GAP * 2);
         chestsort$leftPanelW = Math.min(CHESTSORT_PANEL_W, Math.max(0, availableLeft));
-        chestsort$leftPanelX = x - chestsort$leftPanelW - CHESTSORT_PANEL_GAP;
+        chestsort$leftPanelX = leftPos - chestsort$leftPanelW - CHESTSORT_PANEL_GAP;
 
-        int availableRight = screenW - (x + backgroundWidth) - (CHESTSORT_PANEL_GAP * 2);
+        int availableRight = screenW - (leftPos + imageWidth) - (CHESTSORT_PANEL_GAP * 2);
         chestsort$rightPanelW = Math.min(CHESTSORT_PANEL_W, Math.max(0, availableRight));
-        chestsort$rightPanelX = x + backgroundWidth + CHESTSORT_PANEL_GAP;
+        chestsort$rightPanelX = leftPos + imageWidth + CHESTSORT_PANEL_GAP;
 
         // Compute vertical layout for filter mode so buttons/results never go off-screen.
         // Left panel is a scrollable list; in filter mode it may have a tab header.
@@ -727,11 +732,11 @@ public abstract class HandledScreenMixin {
             chestsort$resultsRowsY = 0;
         }
 
-        int leftYPreferred = y + CHESTSORT_PANEL_GAP;
+        int leftYPreferred = topPos + CHESTSORT_PANEL_GAP;
         int leftYMax = screenH - leftPanelH - CHESTSORT_PANEL_GAP;
         chestsort$leftPanelY = Math.max(CHESTSORT_PANEL_GAP, Math.min(leftYPreferred, leftYMax));
 
-        int rightYPreferred = y + CHESTSORT_PANEL_GAP;
+        int rightYPreferred = topPos + CHESTSORT_PANEL_GAP;
         int rightYMax = screenH - rightPanelH - CHESTSORT_PANEL_GAP;
         chestsort$rightPanelY = Math.max(CHESTSORT_PANEL_GAP, Math.min(rightYPreferred, rightYMax));
 
@@ -884,7 +889,7 @@ public abstract class HandledScreenMixin {
 
         String dimId = ClientContainerContext.dimensionId();
         long posLong = ClientContainerContext.posLong();
-        boolean hasServerContext = dimId != null && !dimId.isEmpty();
+        boolean hasContainerKey = dimId != null && !dimId.isEmpty() && posLong != 0L;
 
         // Keep tab storage in sync in case list instances were replaced.
         chestsort$syncTabStorageFromEditingLists();
@@ -929,18 +934,8 @@ public abstract class HandledScreenMixin {
         java.util.List<String> blPresets = ContainerFilterSpec.normalizeStrings(chestsort$editingBlacklistPresets == null ? java.util.List.of() : chestsort$editingBlacklistPresets);
         ContainerFilterSpec blacklistForContainer = new ContainerFilterSpec(blItems, blTags, blPresets, false).normalized();
 
-        if (hasServerContext) {
-            ClientNetworkingUtil.sendSafe(new SetContainerFiltersPayload(
-                dimId,
-                posLong,
-                whitelistForContainer,
-                blacklistForContainer,
-                chestsort$editingWhitelistPriority
-            ));
-
-            // Legacy whitelist-only payloads (still useful for compatibility).
-            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, posLong, whitelistForContainer));
-            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, posLong, whitelistForContainer.items()));
+        if (hasContainerKey) {
+            ClientContainerFilterStorage.put(dimId, posLong, whitelistForContainer, blacklistForContainer, chestsort$editingWhitelistPriority);
         }
 
         ClientContainerContext.set(
@@ -951,11 +946,6 @@ public abstract class HandledScreenMixin {
             blacklistForContainer,
             chestsort$editingWhitelistPriority
         );
-
-        // Client-only persistence (works on unmodded servers once we have a key).
-        if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
-            ClientContainerFilterStorage.put(dimId, posLong, whitelistForContainer, blacklistForContainer, chestsort$editingWhitelistPriority);
-        }
 
         chestsort$editingWhitelistItems = new java.util.ArrayList<>(whitelistForContainer.items());
         chestsort$editingWhitelistTags = new java.util.ArrayList<>(whitelistForContainer.tags());
@@ -972,21 +962,23 @@ public abstract class HandledScreenMixin {
     @Inject(method = "init", at = @At("TAIL"))
     @SuppressWarnings("unused")
     private void chestsort$init(CallbackInfo ci) {
-        // Client-only bootstrap: on unmodded servers we won't get ContainerContext packets.
-        // Infer the container position from the last interacted block and load per-container filters.
-        if (this.handler instanceof net.minecraft.screen.GenericContainerScreenHandler) {
-            String currentDim = ClientContainerContext.dimensionId();
-            if (currentDim == null || currentDim.isEmpty()) {
-                String dimId = ClientLastInteractedBlock.dimIdIfRecent(5000);
-                long posLong = ClientLastInteractedBlock.posLongIfRecent(5000);
-                if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
-                    var entry = ClientContainerFilterStorage.get(dimId, posLong);
-                    if (entry != null) {
-                        ClientContainerContext.set(dimId, posLong, "chest", entry.whitelist(), entry.blacklist(), entry.whitelistPriority());
-                    } else {
-                        // Keep last-used filter values, but associate them with this container's key.
-                        ClientContainerContext.setKey(dimId, posLong, "chest");
+        chestsort$findIndexRecorded = false;
+
+        // Client-only bootstrap: this mod never relies on server support. Identify the
+        // container from the last block the player right-clicked, and load its filter from
+        // the client-local per-container store.
+        if (this.menu instanceof net.minecraft.world.inventory.ChestMenu) {
+            String dimId = ClientLastInteractedBlock.dimIdIfRecent(5000);
+            long posLong = ClientLastInteractedBlock.posLongIfRecent(5000);
+            if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
+                var entry = ClientContainerFilterStorage.get(dimId, posLong);
+                if (entry != null) {
+                    ClientContainerContext.set(dimId, posLong, "chest", entry.whitelist(), entry.blacklist(), entry.whitelistPriority());
+                    if (ClientAutosortState.isEnabled(dimId, posLong) && !entry.whitelist().isEmpty()) {
+                        ClientOnlySorter.sortIntoOpenContainer(Minecraft.getInstance(), this.menu, entry.whitelist(), entry.blacklist(), entry.whitelistPriority());
                     }
+                } else {
+                    ClientContainerContext.setKey(dimId, posLong, "chest");
                 }
             }
         }
@@ -1009,16 +1001,16 @@ public abstract class HandledScreenMixin {
         int rightX = chestsort$rightPanelX;
         int rightY = chestsort$rightPanelY;
 
-        chestsort$undoButton = ButtonWidget.builder(Text.literal("Undo"), b -> {
+        chestsort$undoButton = Button.builder(Component.literal("Undo"), b -> {
             if (!ClientSortNotificationState.isActiveForCurrentContainer()) return;
             long undoId = ClientSortNotificationState.undoId();
             if (undoId == 0L) return;
             if (ClientContainerContext.dimensionId().isEmpty()) return;
             ClientNetworkingUtil.sendSafe(new UndoSortPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), undoId));
-        }).dimensions(0, 0, 50, 20).build();
+        }).bounds(0, 0, 50, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$undoButton);
 
-        chestsort$filterButton = ButtonWidget.builder(Text.literal("Filter"), b -> {
+        chestsort$filterButton = Button.builder(Component.literal("Filter"), b -> {
             if (!chestsort$isTargetContainer()) return;
             var wl = ClientContainerContext.filterSpec();
             var bl = ClientContainerContext.blacklistSpec();
@@ -1048,7 +1040,7 @@ public abstract class HandledScreenMixin {
             chestsort$resultsScroll = 0;
 
             if (chestsort$searchField != null) {
-                chestsort$searchField.setText("");
+                chestsort$searchField.setValue("");
                 chestsort$searchField.setFocused(true);
             }
             chestsort$selectedLeftRowIndex = -1;
@@ -1057,35 +1049,35 @@ public abstract class HandledScreenMixin {
                 chestsort$updateSearchResults();
             }
         })
-            .dimensions(rightX, rightY, rightW, 20)
+            .bounds(rightX, rightY, rightW, 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$filterButton);
 
-        chestsort$whitelistTabButton = ButtonWidget.builder(Text.literal("Whitelist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_WHITELIST))
-            .dimensions(0, 0, 10, 20)
+        chestsort$whitelistTabButton = Button.builder(Component.literal("Whitelist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_WHITELIST))
+            .bounds(0, 0, 10, 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$whitelistTabButton);
 
-        chestsort$blacklistTabButton = ButtonWidget.builder(Text.literal("Blacklist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_BLACKLIST))
-            .dimensions(0, 0, 10, 20)
+        chestsort$blacklistTabButton = Button.builder(Component.literal("Blacklist"), b -> chestsort$switchFilterTab(CHESTSORT_TAB_BLACKLIST))
+            .bounds(0, 0, 10, 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$blacklistTabButton);
 
-        chestsort$importOpenButton = ButtonWidget.builder(Text.literal("Import"), b -> {
+        chestsort$importOpenButton = Button.builder(Component.literal("Import"), b -> {
             if (!chestsort$isTargetContainer()) return;
             chestsort$importPopupOpen = true;
             chestsort$exportPopupOpen = false;
             chestsort$importError = "";
             if (chestsort$importField != null) {
-                chestsort$importField.setText("");
+                chestsort$importField.setValue("");
                 chestsort$importField.setFocused(true);
             }
         })
-            .dimensions(rightX, rightY + 24, Math.max(0, (rightW - 18) / 2), 20)
+            .bounds(rightX, rightY + 24, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$importOpenButton);
 
-        chestsort$exportOpenButton = ButtonWidget.builder(Text.literal("Export"), b -> {
+        chestsort$exportOpenButton = Button.builder(Component.literal("Export"), b -> {
             if (!chestsort$isTargetContainer()) return;
             chestsort$exportPopupOpen = true;
             chestsort$importPopupOpen = false;
@@ -1095,149 +1087,124 @@ public abstract class HandledScreenMixin {
             if (spec2 == null || spec2.isEmpty()) {
                 chestsort$exportError = "No filter set";
                 if (chestsort$exportField != null) {
-                    chestsort$exportField.setText("");
+                    chestsort$exportField.setValue("");
                 }
             } else {
                 String encoded = chestsort$encodeFilterSpec(spec2);
                 if (chestsort$exportField != null) {
-                    chestsort$exportField.setText(encoded);
+                    chestsort$exportField.setValue(encoded);
                     chestsort$exportField.setFocused(true);
                 }
             }
         })
-            .dimensions(rightX, rightY + 24, Math.max(0, (rightW - 18) / 2), 20)
+            .bounds(rightX, rightY + 24, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$exportOpenButton);
 
-        chestsort$sortButton = ButtonWidget.builder(Text.literal("Sort"), b -> {
+        chestsort$sortButton = Button.builder(Component.literal("Sort"), b -> {
             if (!chestsort$isTargetContainer()) return;
             if (!ClientContainerContext.hasFilter()) return;
 
-            String dimId = ClientContainerContext.dimensionId();
-            if (dimId != null && !dimId.isEmpty() && ClientNetworkingUtil.canSend(SortRequestPayload.ID)) {
-                ClientNetworkingUtil.sendSafe(new SortRequestPayload(dimId, ClientContainerContext.posLong()));
-                return;
-            }
-
-            // Client-only fallback for servers without ChestSort.
             ClientOnlySorter.sortIntoOpenContainer(
-                MinecraftClient.getInstance(),
-                this.handler,
+                Minecraft.getInstance(),
+                this.menu,
                 ClientContainerContext.filterSpec(),
                 ClientContainerContext.blacklistSpec(),
                 ClientContainerContext.whitelistPriority()
             );
-        }).dimensions(rightX, rightY + 48, rightW, 20).build();
+        }).bounds(rightX, rightY + 48, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$sortButton);
 
-        chestsort$organizeButton = ButtonWidget.builder(Text.literal("Organize"), b -> {
+        chestsort$organizeButton = Button.builder(Component.literal("Organize"), b -> {
             if (!chestsort$isTargetContainer()) return;
-            String dimId = ClientContainerContext.dimensionId();
-            if (dimId != null && !dimId.isEmpty() && ClientNetworkingUtil.canSend(OrganizeRequestPayload.ID)) {
-                ClientNetworkingUtil.sendSafe(new OrganizeRequestPayload(dimId, ClientContainerContext.posLong()));
-                return;
-            }
-
-            // Client-only fallback for servers without ChestSort.
-            ClientOnlyOrganizer.organizeOpenContainer(MinecraftClient.getInstance(), this.handler);
-        }).dimensions(rightX, rightY + 72, rightW, 20).build();
+            ClientOnlyOrganizer.organizeOpenContainer(Minecraft.getInstance(), this.menu);
+        }).bounds(rightX, rightY + 72, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$organizeButton);
 
-        chestsort$autosortButton = ButtonWidget.builder(Text.literal("Autosort: OFF"), b -> {
+        chestsort$autosortButton = Button.builder(Component.literal("Autosort: OFF"), b -> {
             if (!chestsort$isTargetContainer()) return;
-            if (ClientContainerContext.dimensionId().isEmpty() || !ClientNetworkingUtil.canSend(SetFilterV2Payload.ID)) {
-                var client = MinecraftClient.getInstance();
-                if (client != null && client.player != null) {
-                    client.player.sendMessage(Text.literal("[ChestSort] Autosort requires server support").formatted(Formatting.GRAY), false);
-                }
-                return;
-            }
+            String dimId = ClientContainerContext.dimensionId();
+            long posLong = ClientContainerContext.posLong();
+            if (dimId == null || dimId.isEmpty()) return;
 
-            ContainerFilterSpec current = ClientContainerContext.filterSpec();
-            current = (current == null) ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of(), false) : current.normalized();
-
-            boolean next = !current.autosort();
-            ContainerFilterSpec updated = new ContainerFilterSpec(current.items(), current.tags(), current.presets(), next).normalized();
-
-            // v2 payload (items + tags + presets + autosort) + legacy v1 payload (items only).
-            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated));
-            ClientNetworkingUtil.sendSafe(new SetFilterPayload(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), updated.items()));
-            ClientContainerContext.set(ClientContainerContext.dimensionId(), ClientContainerContext.posLong(), ClientContainerContext.containerType(), updated);
-
-            // Keep the filter editor state in sync if the user opens it right after toggling.
+            // Client-local autosort flag: this mod never relies on server support, so autosort
+            // is purely a client preference that re-triggers a normal (client-only) sort on
+            // every open of this container.
+            boolean next = !ClientAutosortState.isEnabled(dimId, posLong);
+            ClientAutosortState.setEnabled(dimId, posLong, next);
             chestsort$editingAutosort = next;
-        }).dimensions(rightX, rightY + 96, rightW, 20).build();
+        }).bounds(rightX, rightY + 96, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$autosortButton);
 
-        chestsort$lockSlotButton = ButtonWidget.builder(Text.literal("Lock Slots: OFF"), b -> {
+        chestsort$lockSlotButton = Button.builder(Component.literal("Lock Slots: OFF"), b -> {
             if (!chestsort$isTargetContainer()) return;
             chestsort$lockSlotsMode = !chestsort$lockSlotsMode;
-        }).dimensions(rightX, rightY + 120, rightW, 20).build();
+        }).bounds(rightX, rightY + 120, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$lockSlotButton);
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
         if (tr != null) {
-            chestsort$searchField = new TextFieldWidget(tr, rightX, rightY, rightW, 20, Text.literal("Search"));
+            chestsort$searchField = new EditBox(tr, rightX, rightY, rightW, 20, Component.literal("Search"));
             chestsort$searchField.setMaxLength(64);
-            chestsort$searchField.setChangedListener(s -> chestsort$updateSearchResults());
+            chestsort$searchField.setResponder(s -> chestsort$updateSearchResults());
             ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$searchField);
 
-            chestsort$importField = new TextFieldWidget(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Text.literal("Import"));
+            chestsort$importField = new EditBox(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Component.literal("Import"));
             chestsort$importField.setMaxLength(32767);
             ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$importField);
 
-            chestsort$exportField = new TextFieldWidget(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Text.literal("Export"));
+            chestsort$exportField = new EditBox(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Component.literal("Export"));
             chestsort$exportField.setMaxLength(32767);
             ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$exportField);
         }
 
-        chestsort$importConfirmButton = ButtonWidget.builder(Text.literal("Import"), b -> chestsort$tryImportFromPopup())
-            .dimensions(rightX + 6, rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
+        chestsort$importConfirmButton = Button.builder(Component.literal("Import"), b -> chestsort$tryImportFromPopup())
+            .bounds(rightX + 6, rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$importConfirmButton);
 
-        chestsort$importCancelButton = ButtonWidget.builder(Text.literal("Cancel"), b -> chestsort$closeImportPopup())
-            .dimensions(rightX + 12 + Math.max(0, (rightW - 18) / 2), rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
+        chestsort$importCancelButton = Button.builder(Component.literal("Cancel"), b -> chestsort$closeImportPopup())
+            .bounds(rightX + 12 + Math.max(0, (rightW - 18) / 2), rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$importCancelButton);
 
-        chestsort$exportCloseButton = ButtonWidget.builder(Text.literal("Close"), b -> chestsort$closeExportPopup())
-            .dimensions(rightX + 6, rightY + 46, Math.max(0, rightW - 12), 20)
+        chestsort$exportCloseButton = Button.builder(Component.literal("Close"), b -> chestsort$closeExportPopup())
+            .bounds(rightX + 6, rightY + 46, Math.max(0, rightW - 12), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$exportCloseButton);
 
-        chestsort$editPresetButton = ButtonWidget.builder(Text.literal("Edit preset: OFF"), b -> {
+        chestsort$editPresetButton = Button.builder(Component.literal("Edit preset: OFF"), b -> {
             if (chestsort$editingPresetName == null || chestsort$editingPresetName.isEmpty()) {
                 chestsort$editPresetMode = false;
                 return;
             }
 
             chestsort$editPresetMode = !chestsort$editPresetMode;
-        }).dimensions(rightX, rightY + 24, rightW, 20).build();
+        }).bounds(rightX, rightY + 24, rightW, 20).build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$editPresetButton);
 
         if (tr != null) {
-            chestsort$presetImportField = new TextFieldWidget(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Text.literal("Import Preset"));
+            chestsort$presetImportField = new EditBox(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Component.literal("Import Preset"));
             chestsort$presetImportField.setMaxLength(32767);
             ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$presetImportField);
 
-            chestsort$presetExportField = new TextFieldWidget(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Text.literal("Export Preset"));
+            chestsort$presetExportField = new EditBox(tr, rightX + 6, rightY + 22, Math.max(0, rightW - 12), 20, Component.literal("Export Preset"));
             chestsort$presetExportField.setMaxLength(32767);
             ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$presetExportField);
         }
 
-        chestsort$presetImportConfirmButton = ButtonWidget.builder(Text.literal("Import"), b -> chestsort$tryImportPresetFromPopup())
-            .dimensions(rightX + 6, rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
+        chestsort$presetImportConfirmButton = Button.builder(Component.literal("Import"), b -> chestsort$tryImportPresetFromPopup())
+            .bounds(rightX + 6, rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$presetImportConfirmButton);
 
-        chestsort$presetImportCancelButton = ButtonWidget.builder(Text.literal("Cancel"), b -> chestsort$closePresetImportPopup())
-            .dimensions(rightX + 12 + Math.max(0, (rightW - 18) / 2), rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
+        chestsort$presetImportCancelButton = Button.builder(Component.literal("Cancel"), b -> chestsort$closePresetImportPopup())
+            .bounds(rightX + 12 + Math.max(0, (rightW - 18) / 2), rightY + 46, Math.max(0, (rightW - 18) / 2), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$presetImportCancelButton);
 
-        chestsort$presetExportCloseButton = ButtonWidget.builder(Text.literal("Close"), b -> chestsort$closePresetExportPopup())
-            .dimensions(rightX + 6, rightY + 46, Math.max(0, rightW - 12), 20)
+        chestsort$presetExportCloseButton = Button.builder(Component.literal("Close"), b -> chestsort$closePresetExportPopup())
+            .bounds(rightX + 6, rightY + 46, Math.max(0, rightW - 12), 20)
             .build();
         ((ScreenInvoker) (Object) this).chestsort$invokeAddDrawableChild(chestsort$presetExportCloseButton);
 
@@ -1262,15 +1229,14 @@ public abstract class HandledScreenMixin {
         if (chestsort$organizeButton != null) chestsort$organizeButton.visible = showMainButtons;
         if (chestsort$autosortButton != null) {
             chestsort$autosortButton.visible = showMainButtons;
-            ContainerFilterSpec spec = ClientContainerContext.filterSpec();
-            boolean on = spec != null && spec.autosort();
-            chestsort$autosortButton.setMessage(Text.literal("Autosort: " + (on ? "ON" : "OFF")));
+            boolean on = ClientAutosortState.isEnabled(ClientContainerContext.dimensionId(), ClientContainerContext.posLong());
+            chestsort$autosortButton.setMessage(Component.literal("Autosort: " + (on ? "ON" : "OFF")));
         }
 
         if (chestsort$lockSlotButton != null) {
             chestsort$lockSlotButton.visible = showMainButtons;
             chestsort$lockSlotButton.active = showMainButtons;
-            chestsort$lockSlotButton.setMessage(Text.literal("Lock Slots: " + (chestsort$lockSlotsMode ? "ON" : "OFF")));
+            chestsort$lockSlotButton.setMessage(Component.literal("Lock Slots: " + (chestsort$lockSlotsMode ? "ON" : "OFF")));
         }
 
         if (chestsort$undoButton != null) {
@@ -1280,9 +1246,9 @@ public abstract class HandledScreenMixin {
             chestsort$undoButton.visible = showUndo;
 
             if (showUndo) {
-                var client = MinecraftClient.getInstance();
-                int screenW = client.getWindow().getScaledWidth();
-                int screenH = client.getWindow().getScaledHeight();
+                var client = Minecraft.getInstance();
+                int screenW = client.getWindow().getGuiScaledWidth();
+                int screenH = client.getWindow().getGuiScaledHeight();
                 int w = chestsort$undoButton.getWidth();
                 int h = chestsort$undoButton.getHeight();
                 int pad = 4;
@@ -1310,7 +1276,7 @@ public abstract class HandledScreenMixin {
         boolean showEditPreset = isTarget && chestsort$filterMode && hasRightPanel && chestsort$editingPresetName != null && !chestsort$editingPresetName.isEmpty();
         if (chestsort$editPresetButton != null) {
             chestsort$editPresetButton.visible = showEditPreset;
-            chestsort$editPresetButton.setMessage(Text.literal("Edit preset: " + (chestsort$editPresetMode ? "ON" : "OFF")));
+            chestsort$editPresetButton.setMessage(Component.literal("Edit preset: " + (chestsort$editPresetMode ? "ON" : "OFF")));
         }
 
         boolean showImportPopup = isTarget && chestsort$importPopupOpen && !chestsort$filterMode && hasRightPanel;
@@ -1351,7 +1317,7 @@ public abstract class HandledScreenMixin {
         // Treat vanilla container screens as eligible immediately, and rely on dimensionId/posLong checks
         // to gate actions that truly require server context.
         return ClientContainerContext.isChestOrBarrel()
-            || (this.handler instanceof net.minecraft.screen.GenericContainerScreenHandler);
+            || (this.menu instanceof net.minecraft.world.inventory.ChestMenu);
     }
 
     @Unique
@@ -1377,7 +1343,7 @@ public abstract class HandledScreenMixin {
     private void chestsort$tryImportPresetFromPopup() {
         if (!chestsort$isTargetContainer()) return;
 
-        String raw = chestsort$presetImportField == null ? "" : chestsort$presetImportField.getText();
+        String raw = chestsort$presetImportField == null ? "" : chestsort$presetImportField.getValue();
         if (raw == null || raw.trim().isEmpty()) {
             chestsort$presetImportError = "empty";
             return;
@@ -1432,7 +1398,7 @@ public abstract class HandledScreenMixin {
         ContainerFilterSpec bl = ClientPresetRegistry.getBlacklist(name);
         if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) {
             chestsort$presetExportError = "No preset / empty";
-            if (chestsort$presetExportField != null) chestsort$presetExportField.setText("");
+            if (chestsort$presetExportField != null) chestsort$presetExportField.setValue("");
             return;
         }
 
@@ -1440,7 +1406,7 @@ public abstract class HandledScreenMixin {
         ContainerFilterSpec safeBl = bl == null ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : bl;
         String encoded = Cs2StringCodec.encodePreset(name, safeWl, safeBl);
         if (chestsort$presetExportField != null) {
-            chestsort$presetExportField.setText(encoded);
+            chestsort$presetExportField.setValue(encoded);
             chestsort$presetExportField.setFocused(true);
         }
     }
@@ -1454,7 +1420,7 @@ public abstract class HandledScreenMixin {
         chestsort$exportPopupOpen = false;
         chestsort$presetImportError = "";
         if (chestsort$presetImportField != null) {
-            chestsort$presetImportField.setText("");
+            chestsort$presetImportField.setValue("");
             chestsort$presetImportField.setFocused(true);
         }
     }
@@ -1494,7 +1460,7 @@ public abstract class HandledScreenMixin {
         chestsort$tagBrowserItems = java.util.List.of();
 
         if (chestsort$searchField != null) {
-            chestsort$searchField.setText("");
+            chestsort$searchField.setValue("");
             chestsort$searchField.setFocused(true);
             chestsort$updateSearchResults();
         }
@@ -1520,11 +1486,14 @@ public abstract class HandledScreenMixin {
         ContainerFilterSpec updated = new ContainerFilterSpec(safe.items(), safe.tags(), presets).normalized();
 
         String dimId = ClientContainerContext.dimensionId();
-        if (dimId != null && !dimId.isEmpty()) {
-            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, ClientContainerContext.posLong(), updated));
-            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, ClientContainerContext.posLong(), updated.items()));
+        long posLong = ClientContainerContext.posLong();
+        if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
+            var existing = ClientContainerFilterStorage.get(dimId, posLong);
+            var blacklist = existing == null ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : existing.blacklist();
+            boolean priority = existing == null || existing.whitelistPriority();
+            ClientContainerFilterStorage.put(dimId, posLong, updated, blacklist, priority);
         }
-        ClientContainerContext.set(dimId, ClientContainerContext.posLong(), ClientContainerContext.containerType(), updated);
+        ClientContainerContext.set(dimId, posLong, ClientContainerContext.containerType(), updated);
     }
 
     @Unique
@@ -1549,7 +1518,7 @@ public abstract class HandledScreenMixin {
     private void chestsort$tryImportFromPopup() {
         if (!chestsort$isTargetContainer()) return;
 
-        String raw = chestsort$importField == null ? "" : chestsort$importField.getText();
+        String raw = chestsort$importField == null ? "" : chestsort$importField.getValue();
         ContainerFilterSpec spec;
         try {
             var decoded = Cs2StringCodec.decodeFilterImport(raw);
@@ -1575,11 +1544,14 @@ public abstract class HandledScreenMixin {
         spec = (spec == null) ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : spec.normalized();
 
         String dimId = ClientContainerContext.dimensionId();
-        if (dimId != null && !dimId.isEmpty()) {
-            ClientNetworkingUtil.sendSafe(new SetFilterV2Payload(dimId, ClientContainerContext.posLong(), spec));
-            ClientNetworkingUtil.sendSafe(new SetFilterPayload(dimId, ClientContainerContext.posLong(), spec.items()));
+        long posLong = ClientContainerContext.posLong();
+        if (dimId != null && !dimId.isEmpty() && posLong != 0L) {
+            var existing = ClientContainerFilterStorage.get(dimId, posLong);
+            var blacklist = existing == null ? new ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : existing.blacklist();
+            boolean priority = existing == null || existing.whitelistPriority();
+            ClientContainerFilterStorage.put(dimId, posLong, spec, blacklist, priority);
         }
-        ClientContainerContext.set(dimId, ClientContainerContext.posLong(), ClientContainerContext.containerType(), spec);
+        ClientContainerContext.set(dimId, posLong, ClientContainerContext.containerType(), spec);
 
         chestsort$closeImportPopup();
     }
@@ -1611,7 +1583,7 @@ public abstract class HandledScreenMixin {
 
     @Inject(method = "mouseClicked", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
-    private void chestsort$mouseClicked(net.minecraft.client.gui.Click click, boolean bl, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+    private void chestsort$mouseClicked(net.minecraft.client.input.MouseButtonEvent click, boolean bl, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
         if (!chestsort$isTargetContainer()) {
             return;
         }
@@ -1739,7 +1711,7 @@ public abstract class HandledScreenMixin {
                                 chestsort$tagBrowserTagId = ContainerFilterSpec.normalizeTagId(tag.tagId());
                                 chestsort$rebuildTagBrowserItems();
                                 if (chestsort$searchField != null) {
-                                    chestsort$searchField.setText("");
+                                    chestsort$searchField.setValue("");
                                     chestsort$updateSearchResults();
                                 }
                                 chestsort$selectedLeftRowIndex = rowIndex;
@@ -1778,7 +1750,7 @@ public abstract class HandledScreenMixin {
                                     chestsort$editingAutosort = spec != null && spec.autosort();
                                     chestsort$filterDirty = false;
                                     if (chestsort$searchField != null) {
-                                        chestsort$searchField.setText("");
+                                        chestsort$searchField.setValue("");
                                         chestsort$updateSearchResults();
                                     }
                                 }
@@ -1861,7 +1833,7 @@ public abstract class HandledScreenMixin {
                                     chestsort$tagBrowserTagId = tagId;
                                     chestsort$rebuildTagBrowserItems();
                                     if (chestsort$searchField != null) {
-                                        chestsort$searchField.setText("");
+                                        chestsort$searchField.setValue("");
                                         chestsort$updateSearchResults();
                                     }
                                 } else {
@@ -1881,7 +1853,7 @@ public abstract class HandledScreenMixin {
                                 }
                             } else {
                                 if (entryItem != null) {
-                                    String itemId = String.valueOf(Registries.ITEM.getId(entryItem));
+                                    String itemId = BuiltInRegistries.ITEM.getKey(entryItem).toString();
                                     if (chestsort$tagBrowserMode) {
                                         chestsort$addTagException(itemId);
                                     } else {
@@ -1969,13 +1941,13 @@ public abstract class HandledScreenMixin {
 
     @Inject(method = "keyPressed", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
-    private void chestsort$keyPressed(net.minecraft.client.input.KeyInput keyInput, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+    private void chestsort$keyPressed(net.minecraft.client.input.KeyEvent keyInput, org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
         if (!chestsort$isTargetContainer()) {
             return;
         }
 
         if (chestsort$importPopupOpen && !chestsort$filterMode) {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
 
             boolean importFocused = chestsort$importField != null && chestsort$importField.visible && chestsort$importField.isFocused();
             if (importFocused) {
@@ -1985,14 +1957,14 @@ public abstract class HandledScreenMixin {
                     return;
                 }
 
-                if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+                if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                     cir.setReturnValue(true);
                     cir.cancel();
                     return;
                 }
             }
 
-            if (client != null && client.options != null && client.options.backKey != null && client.options.backKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyDown != null && client.options.keyDown.matches(keyInput)) {
                 chestsort$closeImportPopup();
                 cir.setReturnValue(true);
                 cir.cancel();
@@ -2011,7 +1983,7 @@ public abstract class HandledScreenMixin {
         }
 
         if (chestsort$exportPopupOpen && !chestsort$filterMode) {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
 
             boolean exportFocused = chestsort$exportField != null && chestsort$exportField.visible && chestsort$exportField.isFocused();
             if (exportFocused) {
@@ -2021,14 +1993,14 @@ public abstract class HandledScreenMixin {
                     return;
                 }
 
-                if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+                if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                     cir.setReturnValue(true);
                     cir.cancel();
                     return;
                 }
             }
 
-            if (client != null && client.options != null && client.options.backKey != null && client.options.backKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyDown != null && client.options.keyDown.matches(keyInput)) {
                 chestsort$closeExportPopup();
                 cir.setReturnValue(true);
                 cir.cancel();
@@ -2039,7 +2011,7 @@ public abstract class HandledScreenMixin {
         }
 
         if (chestsort$presetImportPopupOpen && !chestsort$filterMode) {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
 
             boolean focused = chestsort$presetImportField != null && chestsort$presetImportField.visible && chestsort$presetImportField.isFocused();
             if (focused) {
@@ -2048,14 +2020,14 @@ public abstract class HandledScreenMixin {
                     cir.cancel();
                     return;
                 }
-                if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+                if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                     cir.setReturnValue(true);
                     cir.cancel();
                     return;
                 }
             }
 
-            if (client != null && client.options != null && client.options.backKey != null && client.options.backKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyDown != null && client.options.keyDown.matches(keyInput)) {
                 chestsort$closePresetImportPopup();
                 cir.setReturnValue(true);
                 cir.cancel();
@@ -2073,7 +2045,7 @@ public abstract class HandledScreenMixin {
         }
 
         if (chestsort$presetExportPopupOpen && !chestsort$filterMode) {
-            MinecraftClient client = MinecraftClient.getInstance();
+            Minecraft client = Minecraft.getInstance();
 
             boolean focused = chestsort$presetExportField != null && chestsort$presetExportField.visible && chestsort$presetExportField.isFocused();
             if (focused) {
@@ -2082,14 +2054,14 @@ public abstract class HandledScreenMixin {
                     cir.cancel();
                     return;
                 }
-                if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+                if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                     cir.setReturnValue(true);
                     cir.cancel();
                     return;
                 }
             }
 
-            if (client != null && client.options != null && client.options.backKey != null && client.options.backKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyDown != null && client.options.keyDown.matches(keyInput)) {
                 chestsort$closePresetExportPopup();
                 cir.setReturnValue(true);
                 cir.cancel();
@@ -2103,7 +2075,7 @@ public abstract class HandledScreenMixin {
             return;
         }
 
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
 
         boolean searchFocused = chestsort$searchField != null && chestsort$searchField.visible && chestsort$searchField.isFocused();
 
@@ -2117,19 +2089,19 @@ public abstract class HandledScreenMixin {
             }
 
             // Prevent the inventory keybind from closing the screen while typing.
-            if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                 cir.setReturnValue(true);
                 cir.cancel();
             }
         } else {
             // ESC: in tag browser mode, go back to the filter editor; otherwise save and exit filter UI.
-            if (client != null && client.options != null && client.options.backKey != null && client.options.backKey.matchesKey(keyInput)) {
+            if (client != null && client.options != null && client.options.keyDown != null && client.options.keyDown.matches(keyInput)) {
                 if (chestsort$tagBrowserMode) {
                     chestsort$tagBrowserMode = false;
                     chestsort$tagBrowserTagId = "";
                     chestsort$tagBrowserItems = java.util.List.of();
                     if (chestsort$searchField != null) {
-                        chestsort$searchField.setText("");
+                        chestsort$searchField.setValue("");
                         chestsort$updateSearchResults();
                     }
                 } else if (chestsort$editingPresetName != null && !chestsort$editingPresetName.isEmpty()) {
@@ -2159,7 +2131,7 @@ public abstract class HandledScreenMixin {
                     chestsort$editingPresetName = "";
                     chestsort$editPresetMode = false;
                     if (chestsort$searchField != null) {
-                        chestsort$searchField.setText("");
+                        chestsort$searchField.setValue("");
                         chestsort$updateSearchResults();
                     }
                 } else {
@@ -2168,7 +2140,7 @@ public abstract class HandledScreenMixin {
                 }
                 cir.setReturnValue(true);
                 cir.cancel();
-            } else if (client != null && client.options != null && client.options.inventoryKey != null && client.options.inventoryKey.matchesKey(keyInput)) {
+            } else if (client != null && client.options != null && client.options.keyInventory != null && client.options.keyInventory.matches(keyInput)) {
                 // Save when the user closes with the inventory key (usually E).
                 // (If in tag browser, still close the whole filter UI; spec only mentions ESC to go back.)
                 chestsort$saveEditingFilter();
@@ -2189,7 +2161,7 @@ public abstract class HandledScreenMixin {
         }
     }
 
-    @Inject(method = "close", at = @At("HEAD"), cancellable = true)
+    @Inject(method = "onClose", at = @At("HEAD"), cancellable = true)
     @SuppressWarnings("unused")
     private void chestsort$close(CallbackInfo ci) {
         // When filter UI is open, ESC/E should close the filter UI (and save), not the inventory screen.
@@ -2224,7 +2196,7 @@ public abstract class HandledScreenMixin {
                 chestsort$tagBrowserTagId = "";
                 chestsort$tagBrowserItems = java.util.List.of();
                 if (chestsort$searchField != null) {
-                    chestsort$searchField.setText("");
+                    chestsort$searchField.setValue("");
                     chestsort$updateSearchResults();
                 }
             } else {
@@ -2235,10 +2207,32 @@ public abstract class HandledScreenMixin {
         }
     }
 
-    @Inject(method = "render", at = @At("HEAD"))
+    @Inject(method = "extractRenderState", at = @At("HEAD"))
     @SuppressWarnings("unused")
-    private void chestsort$renderPanels(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void chestsort$renderPanels(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         chestsort$applyVisibility();
+
+        if (!chestsort$findIndexRecorded && chestsort$isTargetContainer()) {
+            chestsort$findIndexRecorded = true;
+            String dimId = ClientContainerContext.dimensionId();
+            long posLong = ClientContainerContext.posLong();
+            if (dimId != null && !dimId.isEmpty() && this.menu != null && this.menu.slots != null) {
+                var client = Minecraft.getInstance();
+                var playerInv = client == null || client.player == null ? null : client.player.getInventory();
+                java.util.ArrayList<String> itemIds = new java.util.ArrayList<>();
+                for (var slot : this.menu.slots) {
+                    if (slot == null) continue;
+                    if (playerInv != null && slot.container == playerInv) continue;
+                    var stack = slot.getItem();
+                    if (stack == null || stack.isEmpty()) continue;
+                    String itemId = String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem()));
+                    for (int i = 0; i < stack.getCount(); i++) {
+                        itemIds.add(itemId);
+                    }
+                }
+                ClientContainerFindIndex.record(dimId, posLong, itemIds);
+            }
+        }
 
         if (chestsort$isTargetContainer()) {
             if (ClientPresetRegistry.hasPendingOpen()) {
@@ -2258,7 +2252,7 @@ public abstract class HandledScreenMixin {
                         chestsort$filterMode = true;
                         chestsort$filterDirty = false;
                         if (chestsort$searchField != null) {
-                            chestsort$searchField.setText("");
+                            chestsort$searchField.setValue("");
                             chestsort$searchField.setFocused(true);
                             chestsort$updateSearchResults();
                         }
@@ -2281,7 +2275,7 @@ public abstract class HandledScreenMixin {
             if (chestsort$importPopupOpen && !chestsort$filterMode) {
                 chestsort$updateLayout();
 
-                TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+                Font tr = Minecraft.getInstance().font;
                 if (tr != null && chestsort$rightPanelW >= 20) {
                     int rx = chestsort$rightPanelX;
                     int ry = chestsort$rightPanelY;
@@ -2289,12 +2283,12 @@ public abstract class HandledScreenMixin {
                     int boxH = 70;
 
                     context.fill(rx, ry, rx + rw, ry + boxH, 0xAA000000);
-                    context.drawTextWithShadow(tr, Text.literal("Import rule"), rx + 8, ry + 6, 0xFFFFFFFF);
+                    context.text(tr, Component.literal("Import rule"), rx + 8, ry + 6, 0xFFFFFFFF);
 
                     if (chestsort$importError != null && !chestsort$importError.isEmpty()) {
-                        context.drawTextWithShadow(tr, Text.literal(chestsort$importError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
+                        context.text(tr, Component.literal(chestsort$importError).withStyle(ChatFormatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.text(tr, Component.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
@@ -2303,7 +2297,7 @@ public abstract class HandledScreenMixin {
             if (chestsort$presetImportPopupOpen && !chestsort$filterMode) {
                 chestsort$updateLayout();
 
-                TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+                Font tr = Minecraft.getInstance().font;
                 if (tr != null && chestsort$rightPanelW >= 20) {
                     int rx = chestsort$rightPanelX;
                     int ry = chestsort$rightPanelY;
@@ -2311,12 +2305,12 @@ public abstract class HandledScreenMixin {
                     int boxH = 70;
 
                     context.fill(rx, ry, rx + rw, ry + boxH, 0xAA000000);
-                    context.drawTextWithShadow(tr, Text.literal("Import preset"), rx + 8, ry + 6, 0xFFFFFFFF);
+                    context.text(tr, Component.literal("Import preset"), rx + 8, ry + 6, 0xFFFFFFFF);
 
                     if (chestsort$presetImportError != null && !chestsort$presetImportError.isEmpty()) {
-                        context.drawTextWithShadow(tr, Text.literal(chestsort$presetImportError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
+                        context.text(tr, Component.literal(chestsort$presetImportError).withStyle(ChatFormatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.text(tr, Component.literal("Paste a cs2| string"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
@@ -2325,7 +2319,7 @@ public abstract class HandledScreenMixin {
             if (chestsort$presetExportPopupOpen && !chestsort$filterMode) {
                 chestsort$updateLayout();
 
-                TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+                Font tr = Minecraft.getInstance().font;
                 if (tr != null && chestsort$rightPanelW >= 20) {
                     int rx = chestsort$rightPanelX;
                     int ry = chestsort$rightPanelY;
@@ -2334,12 +2328,12 @@ public abstract class HandledScreenMixin {
 
                     context.fill(rx, ry, rx + rw, ry + boxH, 0xAA000000);
                     String title = (chestsort$presetExportName == null || chestsort$presetExportName.isEmpty()) ? "Export preset" : ("Export preset: " + chestsort$presetExportName);
-                    context.drawTextWithShadow(tr, Text.literal(title), rx + 8, ry + 6, 0xFFFFFFFF);
+                    context.text(tr, Component.literal(title), rx + 8, ry + 6, 0xFFFFFFFF);
 
                     if (chestsort$presetExportError != null && !chestsort$presetExportError.isEmpty()) {
-                        context.drawTextWithShadow(tr, Text.literal(chestsort$presetExportError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
+                        context.text(tr, Component.literal(chestsort$presetExportError).withStyle(ChatFormatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Select + copy from box"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.text(tr, Component.literal("Select + copy from box"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
@@ -2348,7 +2342,7 @@ public abstract class HandledScreenMixin {
             if (chestsort$exportPopupOpen && !chestsort$filterMode) {
                 chestsort$updateLayout();
 
-                TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+                Font tr = Minecraft.getInstance().font;
                 if (tr != null && chestsort$rightPanelW >= 20) {
                     int rx = chestsort$rightPanelX;
                     int ry = chestsort$rightPanelY;
@@ -2356,19 +2350,19 @@ public abstract class HandledScreenMixin {
                     int boxH = 70;
 
                     context.fill(rx, ry, rx + rw, ry + boxH, 0xAA000000);
-                    context.drawTextWithShadow(tr, Text.literal("Export rule"), rx + 8, ry + 6, 0xFFFFFFFF);
+                    context.text(tr, Component.literal("Export rule"), rx + 8, ry + 6, 0xFFFFFFFF);
 
                     if (chestsort$exportError != null && !chestsort$exportError.isEmpty()) {
-                        context.drawTextWithShadow(tr, Text.literal(chestsort$exportError).formatted(Formatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
+                        context.text(tr, Component.literal(chestsort$exportError).withStyle(ChatFormatting.RED), rx + 8, ry + 58, 0xFFFFFFFF);
                     } else {
-                        context.drawTextWithShadow(tr, Text.literal("Select + copy from box"), rx + 8, ry + 58, 0xFFAAAAAA);
+                        context.text(tr, Component.literal("Select + copy from box"), rx + 8, ry + 58, 0xFFAAAAAA);
                     }
                 }
                 return;
             }
 
             if (chestsort$filterMode) {
-                TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+                Font tr = Minecraft.getInstance().font;
                 if (tr != null) {
 
                     // Left panel: filter items + filter tags
@@ -2399,7 +2393,7 @@ public abstract class HandledScreenMixin {
                             context.fill(leftX + 6, ry1, leftX + leftW - 6, ry1 + rowH - 1, bg);
 
                             if (rowIndex >= rows.size()) {
-                                context.drawTextWithShadow(tr, Text.literal(""), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(""), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                                 continue;
                             }
 
@@ -2410,46 +2404,46 @@ public abstract class HandledScreenMixin {
                             if (kind == CHESTSORT_LEFT_KIND_ITEMS_HEADER) {
                                 String chevron = chestsort$itemsExpanded ? "v " : "> ";
                                 String label = chevron + "Filter Items (" + chestsort$editingFilterItems.size() + ")";
-                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_AUTOSORT) {
                                 String label = "Autosort: " + (chestsort$editingAutosort ? "ON" : "OFF");
-                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_PRIORITY) {
                                 String label = "Priority: " + (chestsort$editingWhitelistPriority ? "Whitelist" : "Blacklist");
-                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_TAGS_HEADER) {
                                 String chevron = chestsort$tagsExpanded ? "v " : "> ";
                                 String label = chevron + "Filter Tags (" + chestsort$editingFilterTags.size() + ")";
-                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_PRESETS_HEADER) {
                                 String chevron = chestsort$presetsExpanded ? "v " : "> ";
                                 String label = chevron + "Filter Presets (" + chestsort$editingFilterPresets.size() + ")";
-                                context.drawTextWithShadow(tr, Text.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(label), leftX + 8, ry1 + 5, 0xFFFFFFFF);
                             } else if (kind == CHESTSORT_LEFT_KIND_ITEM) {
                                 // Inline remove button (red "x")
                                 context.fill(actionX1, ry1, actionX2, ry1 + rowH - 1, 0xFFFF5555);
-                                context.drawTextWithShadow(tr, Text.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
 
                                 if (idx < chestsort$editingFilterItems.size()) {
                                     String idStr = chestsort$editingFilterItems.get(idx);
-                                    var id = net.minecraft.util.Identifier.tryParse(idStr);
-                                    if (id != null && Registries.ITEM.containsId(id)) {
-                                        var item = Registries.ITEM.get(id);
-                                        context.drawItem(new ItemStack(item), leftX + 8, ry1 + 1);
-                                        String name = Text.translatable(item.getTranslationKey()).getString();
-                                        String nameTrim = textW <= 0 ? name : tr.trimToWidth(name, textW);
-                                        String subTrim = textW <= 0 ? idStr : tr.trimToWidth(idStr, textW);
-                                        chestsort$drawScaledTextWithShadow(context, tr, Text.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF, leftTextScale);
-                                        chestsort$drawScaledTextWithShadow(context, tr, Text.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A, leftTextScale);
+                                    var id = net.minecraft.resources.Identifier.tryParse(idStr);
+                                    if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                                        Item item = BuiltInRegistries.ITEM.get(id).map(Holder.Reference::value).orElse(Items.AIR);
+                                        context.item(new ItemStack(item), leftX + 8, ry1 + 1);
+                                        String name = Component.translatable(item.getDescriptionId()).getString();
+                                        String nameTrim = textW <= 0 ? name : tr.plainSubstrByWidth(name, textW);
+                                        String subTrim = textW <= 0 ? idStr : tr.plainSubstrByWidth(idStr, textW);
+                                        chestsort$drawScaledTextWithShadow(context, tr, Component.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF, leftTextScale);
+                                        chestsort$drawScaledTextWithShadow(context, tr, Component.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A, leftTextScale);
                                     } else {
-                                        String nameTrim = textW <= 0 ? idStr : tr.trimToWidth(idStr, textW);
-                                        chestsort$drawScaledTextWithShadow(context, tr, Text.literal(nameTrim), leftX + 8, ry1 + 5, 0xFFFFFFFF, leftTextScale);
+                                        String nameTrim = textW <= 0 ? idStr : tr.plainSubstrByWidth(idStr, textW);
+                                        chestsort$drawScaledTextWithShadow(context, tr, Component.literal(nameTrim), leftX + 8, ry1 + 5, 0xFFFFFFFF, leftTextScale);
                                     }
                                 }
                             } else if (kind == CHESTSORT_LEFT_KIND_TAG) {
                                 // Inline remove button (red "x")
                                 context.fill(actionX1, ry1, actionX2, ry1 + rowH - 1, 0xFFFF5555);
-                                context.drawTextWithShadow(tr, Text.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
 
                                 if (idx < chestsort$editingFilterTags.size()) {
                                     TagFilterSpec tag = chestsort$editingFilterTags.get(idx);
@@ -2459,16 +2453,16 @@ public abstract class HandledScreenMixin {
                                         : java.util.Set.of();
                                     Item iconItem = chestsort$getTagCycleIcon(tagId, exc);
                                     if (iconItem != null) {
-                                        context.drawItem(new ItemStack(iconItem), leftX + 8, ry1 + 1);
+                                        context.item(new ItemStack(iconItem), leftX + 8, ry1 + 1);
                                     }
                                     int exceptionCount = (exc == null) ? 0 : exc.size();
                                     boolean hasExceptions = exceptionCount > 0;
                                     String name = chestsort$formatTagDisplayName(tagId);
                                     String displayName = hasExceptions ? (name + "* (" + exceptionCount + ")") : name;
-                                    String nameTrim = textW <= 0 ? displayName : tr.trimToWidth(displayName, textW);
-                                    String subTrim = textW <= 0 ? tagId : tr.trimToWidth(tagId, textW);
-                                    chestsort$drawScaledTextWithShadow(context, tr, Text.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF, leftTextScale);
-                                    chestsort$drawScaledTextWithShadow(context, tr, Text.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A, leftTextScale);
+                                    String nameTrim = textW <= 0 ? displayName : tr.plainSubstrByWidth(displayName, textW);
+                                    String subTrim = textW <= 0 ? tagId : tr.plainSubstrByWidth(tagId, textW);
+                                    chestsort$drawScaledTextWithShadow(context, tr, Component.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF, leftTextScale);
+                                    chestsort$drawScaledTextWithShadow(context, tr, Component.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A, leftTextScale);
                                 }
                             } else if (kind == CHESTSORT_LEFT_KIND_PRESET) {
                                 if (idx < chestsort$editingFilterPresets.size()) {
@@ -2476,12 +2470,12 @@ public abstract class HandledScreenMixin {
 
                                     // Inline remove button (red "x").
                                     context.fill(actionX1, ry1, actionX2, ry1 + rowH - 1, 0xFFFF5555);
-                                    context.drawTextWithShadow(tr, Text.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
+                                    context.text(tr, Component.literal("x"), actionX1 + 4, ry1 + 5, 0xFFFFFFFF);
 
                                     ContainerFilterSpec spec = ClientPresetRegistry.get(presetName);
                                     Item icon = chestsort$getPresetCycleIcon(spec);
                                     if (icon != null) {
-                                        context.drawItem(new ItemStack(icon), leftX + 8, ry1 + 1);
+                                        context.item(new ItemStack(icon), leftX + 8, ry1 + 1);
                                     }
 
                                     boolean dirtyHere = chestsort$filterDirty
@@ -2489,8 +2483,8 @@ public abstract class HandledScreenMixin {
                                         && chestsort$editingPresetName.equals(presetName)
                                         && !chestsort$editPresetMode;
                                     String display = dirtyHere ? (presetName + "*") : presetName;
-                                    String nameTrim = textW <= 0 ? display : tr.trimToWidth(display, textW);
-                                    chestsort$drawScaledTextWithShadow(context, tr, Text.literal(nameTrim), textX, ry1 + 5, 0xFFFFFFFF, leftTextScale);
+                                    String nameTrim = textW <= 0 ? display : tr.plainSubstrByWidth(display, textW);
+                                    chestsort$drawScaledTextWithShadow(context, tr, Component.literal(nameTrim), textX, ry1 + 5, 0xFFFFFFFF, leftTextScale);
                                 }
                             }
                         }
@@ -2506,7 +2500,7 @@ public abstract class HandledScreenMixin {
                         String title = chestsort$tagBrowserMode
                             ? ("Tag: " + chestsort$tagBrowserTagId)
                             : "Results";
-                        context.drawTextWithShadow(tr, Text.literal(title), rightX + 6, chestsort$resultsPanelY + 2, 0xFFFFFFFF);
+                        context.text(tr, Component.literal(title), rightX + 6, chestsort$resultsPanelY + 2, 0xFFFFFFFF);
                     }
 
                     if (rightW >= 20) {
@@ -2536,7 +2530,7 @@ public abstract class HandledScreenMixin {
                             String actionLabel = actionIsException ? "x" : "+";
                             int actionTextColor = actionIsException ? 0xFFFFFFFF : 0xFF000000;
                             context.fill(actionX1, ry1, actionX2, ry1 + rowH - 1, actionColor);
-                            context.drawTextWithShadow(tr, Text.literal(actionLabel), actionX1 + 4, ry1 + 5, actionTextColor);
+                            context.text(tr, Component.literal(actionLabel), actionX1 + 4, ry1 + 5, actionTextColor);
 
                             if (idx < chestsort$getSearchResultsSize()) {
                                 Item entryItem = chestsort$searchResultItems.get(idx);
@@ -2548,35 +2542,35 @@ public abstract class HandledScreenMixin {
                                 if (isPreset) {
                                     ContainerFilterSpec spec = ClientPresetRegistry.get(entryPreset);
                                     Item icon = chestsort$getPresetCycleIcon(spec);
-                                    if (icon != null) context.drawItem(new ItemStack(icon), rightX + 8, ry1 + 1);
+                                    if (icon != null) context.item(new ItemStack(icon), rightX + 8, ry1 + 1);
                                     String subtitle = (idx < chestsort$searchResultSubtitles.size()) ? chestsort$searchResultSubtitles.get(idx) : "";
-                                    String nameTrim = textW <= 0 ? entryPreset : tr.trimToWidth(entryPreset, textW);
-                                    String subTrim = textW <= 0 ? subtitle : tr.trimToWidth(subtitle, textW);
-                                    context.drawTextWithShadow(tr, Text.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
-                                    context.drawTextWithShadow(tr, Text.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
+                                    String nameTrim = textW <= 0 ? entryPreset : tr.plainSubstrByWidth(entryPreset, textW);
+                                    String subTrim = textW <= 0 ? subtitle : tr.plainSubstrByWidth(subtitle, textW);
+                                    context.text(tr, Component.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
+                                    context.text(tr, Component.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
                                 } else if (isTag) {
                                     String tagId = ContainerFilterSpec.normalizeTagId(entryTagId);
                                     Item icon = chestsort$getTagCycleIcon(tagId);
-                                    if (icon != null) context.drawItem(new ItemStack(icon), rightX + 8, ry1 + 1);
+                                    if (icon != null) context.item(new ItemStack(icon), rightX + 8, ry1 + 1);
                                     String name = chestsort$formatTagDisplayName(tagId);
                                     String subtitle = (idx < chestsort$searchResultSubtitles.size()) ? chestsort$searchResultSubtitles.get(idx) : tagId;
-                                    String nameTrim = textW <= 0 ? name : tr.trimToWidth(name, textW);
-                                    String subTrim = textW <= 0 ? subtitle : tr.trimToWidth(subtitle, textW);
-                                    context.drawTextWithShadow(tr, Text.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
-                                    context.drawTextWithShadow(tr, Text.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
+                                    String nameTrim = textW <= 0 ? name : tr.plainSubstrByWidth(name, textW);
+                                    String subTrim = textW <= 0 ? subtitle : tr.plainSubstrByWidth(subtitle, textW);
+                                    context.text(tr, Component.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
+                                    context.text(tr, Component.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
                                 } else {
                                     if (entryItem != null) {
-                                        String name = Text.translatable(entryItem.getTranslationKey()).getString();
-                                        String subtitle = (idx < chestsort$searchResultSubtitles.size()) ? chestsort$searchResultSubtitles.get(idx) : String.valueOf(Registries.ITEM.getId(entryItem));
-                                        String nameTrim = textW <= 0 ? name : tr.trimToWidth(name, textW);
-                                        String subTrim = textW <= 0 ? subtitle : tr.trimToWidth(subtitle, textW);
-                                        context.drawItem(new ItemStack(entryItem), rightX + 8, ry1 + 1);
-                                        context.drawTextWithShadow(tr, Text.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
-                                        context.drawTextWithShadow(tr, Text.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
+                                        String name = Component.translatable(entryItem.getDescriptionId()).getString();
+                                        String subtitle = (idx < chestsort$searchResultSubtitles.size()) ? chestsort$searchResultSubtitles.get(idx) : BuiltInRegistries.ITEM.getKey(entryItem).toString();
+                                        String nameTrim = textW <= 0 ? name : tr.plainSubstrByWidth(name, textW);
+                                        String subTrim = textW <= 0 ? subtitle : tr.plainSubstrByWidth(subtitle, textW);
+                                        context.item(new ItemStack(entryItem), rightX + 8, ry1 + 1);
+                                        context.text(tr, Component.literal(nameTrim), textX, ry1 + 2, 0xFFFFFFFF);
+                                        context.text(tr, Component.literal(subTrim), textX, ry1 + 10, 0xFF9A9A9A);
                                     }
                                 }
                             } else {
-                                context.drawTextWithShadow(tr, Text.literal(""), rightX + 8, ry1 + 5, 0xFFFFFFFF);
+                                context.text(tr, Component.literal(""), rightX + 8, ry1 + 5, 0xFFFFFFFF);
                             }
                         }
                     }
@@ -2587,10 +2581,10 @@ public abstract class HandledScreenMixin {
     }
 
     @Unique
-    private void chestsort$renderSortNotification(DrawContext context, int mouseX, int mouseY) {
+    private void chestsort$renderSortNotification(GuiGraphicsExtractor context, int mouseX, int mouseY) {
         chestsort$updateLayout();
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
+        Font tr = Minecraft.getInstance().font;
         if (tr == null) return;
 
         int leftW = chestsort$leftPanelW;
@@ -2615,7 +2609,7 @@ public abstract class HandledScreenMixin {
         } else {
             title = "Sort complete";
         }
-        context.drawTextWithShadow(tr, Text.literal(title), leftX + 8, leftY + 6, 0xFFFFFFFF);
+        context.text(tr, Component.literal(title), leftX + 8, leftY + 6, 0xFFFFFFFF);
 
         String mode = ClientSortNotificationState.autosortMode();
         String modeLabel = mode == null || mode.isEmpty() ? "" : ("Mode: " + mode);
@@ -2633,7 +2627,7 @@ public abstract class HandledScreenMixin {
         } else {
             subtitle = modeLabel.isEmpty() ? moved : (moved + " | " + modeLabel);
         }
-        context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(subtitle, Math.max(0, leftW - 16))), leftX + 8, leftY + 18, 0xFFAAAAAA);
+        context.text(tr, Component.literal(tr.plainSubstrByWidth(subtitle, Math.max(0, leftW - 16))), leftX + 8, leftY + 18, 0xFFAAAAAA);
 
         int listStartY = leftY + 30;
         int listRows = rowsShown - 2;
@@ -2659,45 +2653,47 @@ public abstract class HandledScreenMixin {
 
             Item iconItem = null;
             var id = Identifier.tryParse(itemIdStr);
-            if (id != null && Registries.ITEM.containsId(id)) {
-                iconItem = Registries.ITEM.get(id);
+            if (id != null && BuiltInRegistries.ITEM.containsKey(id)) {
+                iconItem = BuiltInRegistries.ITEM.get(id).map(Holder.Reference::value).orElse(null);
             }
             if (iconItem != null) {
-                context.drawItem(new ItemStack(iconItem), leftX + 8, ry1 + 1);
+                context.item(new ItemStack(iconItem), leftX + 8, ry1 + 1);
             }
 
             String name = itemIdStr;
             if (iconItem != null) {
-                name = Text.translatable(iconItem.getTranslationKey()).getString();
+                name = Component.translatable(iconItem.getDescriptionId()).getString();
             }
             String label = count + "x " + name;
             int textX = leftX + 28;
             int textW = Math.max(0, (leftX + leftW - 8) - textX);
-            context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(label, textW)), textX, ry1 + 5, 0xFFFFFFFF);
+            context.text(tr, Component.literal(tr.plainSubstrByWidth(label, textW)), textX, ry1 + 5, 0xFFFFFFFF);
 
             // Hover tooltip: show why it matched.
             if (!tooltipShown && mouseX >= leftX + 6 && mouseX < leftX + leftW - 6 && mouseY >= ry1 && mouseY < ry1 + rowH) {
-                java.util.ArrayList<Text> tooltip = new java.util.ArrayList<>();
+                java.util.ArrayList<Component> tooltip = new java.util.ArrayList<>();
                 if (itemIdStr != null && !itemIdStr.isEmpty()) {
-                    tooltip.add(Text.literal(itemIdStr).formatted(Formatting.GRAY));
+                    tooltip.add(Component.literal(itemIdStr).withStyle(ChatFormatting.GRAY));
                 }
                 if (line.reasons() != null) {
                     for (String r : line.reasons()) {
                         if (r == null || r.isEmpty()) continue;
-                        tooltip.add(Text.literal(r));
+                        tooltip.add(Component.literal(r));
                     }
                 }
                 if (!tooltip.isEmpty()) {
-                    context.drawTooltip(tr, tooltip, mouseX, mouseY);
+                    java.util.List<net.minecraft.util.FormattedCharSequence> tooltipLines = new java.util.ArrayList<>();
+                    for (Component c : tooltip) tooltipLines.add(c.getVisualOrderText());
+                    context.setTooltipForNextFrame(tr, tooltipLines, mouseX, mouseY);
                     tooltipShown = true;
                 }
             }
         }
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
     @SuppressWarnings("unused")
-    private void chestsort$renderHighlight(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void chestsort$renderHighlight(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!ClientHighlightState.shouldHighlight()) {
             return;
         }
@@ -2708,17 +2704,17 @@ public abstract class HandledScreenMixin {
 
         // Highlight matching slots in the currently open container.
         try {
-            if (handler != null && handler.slots != null) {
-                for (var slot : handler.slots) {
+            if (menu != null && menu.slots != null) {
+                for (var slot : menu.slots) {
                     if (slot == null) continue;
-                    var stack = slot.getStack();
+                    var stack = slot.getItem();
                     if (stack == null || stack.isEmpty()) continue;
-                    var id = net.minecraft.registry.Registries.ITEM.getId(stack.getItem());
+                    var id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem());
                     if (id == null) continue;
                     if (!itemId.equals(id.toString())) continue;
 
-                    int sx = this.x + slot.x;
-                    int sy = this.y + slot.y;
+                    int sx = this.leftPos + slot.x;
+                    int sy = this.topPos + slot.y;
                     // 16x16 slot area; draw a translucent yellow overlay.
                     context.fill(sx, sy, sx + 16, sy + 16, 0x66FFFF00);
                     // thin border
@@ -2732,36 +2728,36 @@ public abstract class HandledScreenMixin {
             // If mappings change, fail gracefully rather than crashing the UI.
         }
 
-        Text text = Text.literal("[CS] Contains: " + itemId).formatted(Formatting.YELLOW);
+        Component text = Component.literal("[CS] Contains: " + itemId).withStyle(ChatFormatting.YELLOW);
 
-        TextRenderer textRenderer = MinecraftClient.getInstance().textRenderer;
+        Font textRenderer = Minecraft.getInstance().font;
         if (textRenderer == null) {
             return;
         }
 
-        context.drawTextWithShadow(textRenderer, text, 8, 8, 0xFFFFFFFF);
+        context.text(textRenderer, text, 8, 8, 0xFFFFFFFF);
     }
 
-    @Inject(method = "render", at = @At("TAIL"))
+    @Inject(method = "extractRenderState", at = @At("TAIL"))
     @SuppressWarnings("unused")
-    private void chestsort$renderLockedSlots(DrawContext context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
+    private void chestsort$renderLockedSlots(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta, CallbackInfo ci) {
         if (!chestsort$isTargetContainer()) return;
 
-        var client = MinecraftClient.getInstance();
+        var client = Minecraft.getInstance();
         if (client == null || client.player == null) return;
 
         try {
             var inv = client.player.getInventory();
-            if (handler != null && handler.slots != null) {
-                for (var slot : handler.slots) {
+            if (menu != null && menu.slots != null) {
+                for (var slot : menu.slots) {
                     if (slot == null) continue;
-                    if (slot.inventory != inv) continue;
+                    if (slot.container != inv) continue;
 
-                    int idx = slot.getIndex();
+                    int idx = slot.index;
                     if (!ClientLockedSlotsState.isLocked(idx)) continue;
 
-                    int sx = this.x + slot.x;
-                    int sy = this.y + slot.y;
+                    int sx = this.leftPos + slot.x;
+                    int sy = this.topPos + slot.y;
                     // Dim + border to show "protected".
                     context.fill(sx, sy, sx + 16, sy + 16, 0x44000000);
                     context.fill(sx, sy, sx + 16, sy + 1, 0xCC888888);
@@ -2778,21 +2774,21 @@ public abstract class HandledScreenMixin {
     private Integer chestsort$hoveredPlayerInventoryIndex(int mouseX, int mouseY) {
         if (mouseX < 0 || mouseY < 0) return null;
 
-        var client = MinecraftClient.getInstance();
+        var client = Minecraft.getInstance();
         if (client == null || client.player == null) return null;
 
         try {
             var inv = client.player.getInventory();
-            if (handler == null || handler.slots == null) return null;
+            if (menu == null || menu.slots == null) return null;
 
-            for (var slot : handler.slots) {
+            for (var slot : menu.slots) {
                 if (slot == null) continue;
-                if (slot.inventory != inv) continue;
+                if (slot.container != inv) continue;
 
-                int sx = this.x + slot.x;
-                int sy = this.y + slot.y;
+                int sx = this.leftPos + slot.x;
+                int sy = this.topPos + slot.y;
                 if (mouseX >= sx && mouseX < sx + 16 && mouseY >= sy && mouseY < sy + 16) {
-                    return slot.getIndex();
+                    return slot.index;
                 }
             }
         } catch (Throwable ignored) {
@@ -2896,8 +2892,8 @@ public abstract class HandledScreenMixin {
             if (itemId == null || itemId.isEmpty()) continue;
             Identifier id = Identifier.tryParse(itemId);
             if (id == null) continue;
-            if (!Registries.ITEM.containsId(id)) continue;
-            return Registries.ITEM.get(id);
+            if (!BuiltInRegistries.ITEM.containsKey(id)) continue;
+            return BuiltInRegistries.ITEM.get(id).map(Holder.Reference::value).orElse(null);
         }
         return null;
     }
@@ -2923,7 +2919,7 @@ public abstract class HandledScreenMixin {
             int idx = (start + step) % items.size();
             Item it = items.get(idx);
             if (it == null) continue;
-            String itemId = String.valueOf(Registries.ITEM.getId(it));
+            String itemId = BuiltInRegistries.ITEM.getKey(it).toString();
             if (itemId.isEmpty()) continue;
             if (!excludedItemIds.contains(itemId)) return it;
         }
@@ -2932,10 +2928,10 @@ public abstract class HandledScreenMixin {
 
     @Unique
     private java.util.List<Item> chestsort$computeItemsForTag(Identifier tagIdentifier) {
-        TagKey<Item> key = TagKey.of(RegistryKeys.ITEM, tagIdentifier);
+        TagKey<Item> key = TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagIdentifier);
         java.util.ArrayList<Item> out = new java.util.ArrayList<>();
-        for (Item item : Registries.ITEM) {
-            if (item.getDefaultStack().isIn(key)) {
+        for (Item item : BuiltInRegistries.ITEM) {
+            if (item.getDefaultInstance().is(key)) {
                 out.add(item);
                 if (out.size() >= 200) break;
             }
@@ -3084,7 +3080,7 @@ public abstract class HandledScreenMixin {
             }
 
             chestsort$allItemTagIds = ids;
-            MinecraftClient mc = MinecraftClient.getInstance();
+            Minecraft mc = Minecraft.getInstance();
             if (mc != null) {
                 mc.execute(() -> {
                     if (chestsort$searchField != null) chestsort$updateSearchResults();
@@ -3099,20 +3095,17 @@ public abstract class HandledScreenMixin {
     private static java.util.List<String> chestsort$collectAllItemTagIdsBlocking() {
         java.util.LinkedHashSet<String> out = new java.util.LinkedHashSet<>();
         try {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            net.minecraft.registry.Registry<Item> registry = (mc != null && mc.world != null)
-                ? mc.world.getRegistryManager().getOrThrow(RegistryKeys.ITEM)
-                : Registries.ITEM;
-
-            registry.streamTags().forEach(named -> {
-                if (named == null) return;
-                TagKey<Item> key = named.getTag();
-                if (key == null) return;
-                Identifier id = key.id();
-                if (id != null) out.add("#" + id);
-            });
-        } catch (Throwable ignored) {
+            for (Item item : BuiltInRegistries.ITEM) {
+                for (TagKey<Item> key : item.builtInRegistryHolder().tags().toList()) {
+                    if (key == null) continue;
+                    Identifier id = key.location();
+                    if (id != null) out.add("#" + id);
+                }
+            }
+        } catch (Throwable t) {
             // If tag enumeration isn't available, we simply won't show suggestions.
+            System.err.println("[ChestSort] Tag id scan failed: " + t);
+            t.printStackTrace();
         }
 
         java.util.ArrayList<String> list = new java.util.ArrayList<>(out.size());
@@ -3171,9 +3164,9 @@ public abstract class HandledScreenMixin {
             if (!match) {
                 Identifier id = Identifier.tryParse(itemId);
                 if (id != null) {
-                    Item item = Registries.ITEM.get(id);
+                    Item item = BuiltInRegistries.ITEM.get(id).map(Holder.Reference::value).orElse(null);
                     if (item != null) {
-                        String name = chestsort$lc(Text.translatable(item.getTranslationKey()).getString());
+                        String name = chestsort$lc(Component.translatable(item.getDescriptionId()).getString());
                         match = name.contains(q);
                     }
                 }
@@ -3224,7 +3217,7 @@ public abstract class HandledScreenMixin {
 
         // Direct TagKey
         if (o instanceof TagKey<?> tagKey) {
-            Identifier id = tagKey.id();
+            Identifier id = tagKey.location();
             if (id != null) out.add("#" + id);
             return;
         }
@@ -3233,7 +3226,7 @@ public abstract class HandledScreenMixin {
         if (o instanceof java.util.Map.Entry<?, ?> e) {
             Object k = e.getKey();
             if (k instanceof TagKey<?> tk) {
-                Identifier id = tk.id();
+                Identifier id = tk.location();
                 if (id != null) out.add("#" + id);
                 return;
             }
@@ -3250,7 +3243,7 @@ public abstract class HandledScreenMixin {
                 }
                 Object k = m.invoke(o);
                 if (k instanceof TagKey<?> tk) {
-                    Identifier id = tk.id();
+                    Identifier id = tk.location();
                     if (id != null) out.add("#" + id);
                     return;
                 }
@@ -3260,18 +3253,18 @@ public abstract class HandledScreenMixin {
     }
 
     @Unique
-    private static void chestsort$drawScaledTextWithShadow(DrawContext context, TextRenderer tr, Text text, int x, int y, int color, float scale) {
+    private static void chestsort$drawScaledTextWithShadow(GuiGraphicsExtractor context, Font tr, Component text, int x, int y, int color, float scale) {
         if (context == null || tr == null || text == null) return;
         if (scale <= 0.0f || scale == 1.0f) {
-            context.drawTextWithShadow(tr, text, x, y, color);
+            context.text(tr, text, x, y, color);
             return;
         }
-        var matrices = context.getMatrices();
+        var matrices = context.pose();
         matrices.pushMatrix();
         matrices.scale(scale, scale);
         int sx = Math.round(x / scale);
         int sy = Math.round(y / scale);
-        context.drawTextWithShadow(tr, text, sx, sy, color);
+        context.text(tr, text, sx, sy, color);
         matrices.popMatrix();
     }
 }

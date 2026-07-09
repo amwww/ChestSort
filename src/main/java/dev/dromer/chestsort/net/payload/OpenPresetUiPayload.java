@@ -1,13 +1,13 @@
 package dev.dromer.chestsort.net.payload;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** Server -> Client: request opening the preset UI inside the container filter screen. */
-public record OpenPresetUiPayload(byte mode, String name) implements CustomPayload {
+public record OpenPresetUiPayload(byte mode, String name) implements CustomPacketPayload {
     /** Open the preset editor for an existing/new preset name. */
     public static final byte MODE_EDIT = 0;
     /** Open the preset-import popup (paste export code). */
@@ -19,18 +19,18 @@ public record OpenPresetUiPayload(byte mode, String name) implements CustomPaylo
     /** Open the preset-export-select screen (choose presets to export as a presetList). */
     public static final byte MODE_EXPORT_SELECT = 4;
 
-    public static final Id<OpenPresetUiPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "open_preset_ui"));
+    public static final CustomPacketPayload.Type<OpenPresetUiPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "open_preset_ui"));
 
-    public static final PacketCodec<RegistryByteBuf, OpenPresetUiPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, OpenPresetUiPayload> CODEC = StreamCodec.of(
         (buf, payload) -> {
             buf.writeByte(payload.mode);
-            buf.writeString(payload.name == null ? "" : payload.name);
+            buf.writeUtf(payload.name == null ? "" : payload.name);
         },
-        buf -> new OpenPresetUiPayload(buf.readByte(), buf.readString())
+        buf -> new OpenPresetUiPayload(buf.readByte(), buf.readUtf())
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

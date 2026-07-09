@@ -15,46 +15,46 @@ import dev.dromer.chestsort.net.payload.FindHighlightsPayload;
 import dev.dromer.chestsort.net.payload.SortResultPayload;
 import dev.dromer.chestsort.util.ContainerCanonicalizer;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.block.entity.BlockEntity;
-import net.minecraft.block.entity.ChestBlockEntity;
-import net.minecraft.inventory.Inventory;
-import net.minecraft.item.ItemStack;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.network.ServerPlayerInteractionManager;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.ActionResult;
-import net.minecraft.util.Hand;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.ChestBlockEntity;
+import net.minecraft.world.Container;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerPlayerGameMode;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.Level;
 
-@Mixin(ServerPlayerInteractionManager.class)
+@Mixin(ServerPlayerGameMode.class)
 public class ServerPlayerInteractionManagerMixin {
 
     @Inject(
-        method = "interactBlock(Lnet/minecraft/server/network/ServerPlayerEntity;Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;Lnet/minecraft/util/Hand;Lnet/minecraft/util/hit/BlockHitResult;)Lnet/minecraft/util/ActionResult;",
+        method = "useItemOn(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
         at = @At("HEAD"),
         cancellable = true
     )
-    private void chestsort$onInteractBlock(ServerPlayerEntity player, World world, ItemStack stack, Hand hand, BlockHitResult hitResult, CallbackInfoReturnable<ActionResult> cir) {
-        if (!(world instanceof ServerWorld serverWorld)) {
+    private void chestsort$onInteractBlock(ServerPlayer player, Level world, ItemStack stack, InteractionHand hand, BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
+        if (!(world instanceof ServerLevel serverWorld)) {
             return;
         }
 
         // Wand selection: right-click sets pos2.
         ChestSortState state = ChestSortState.get(serverWorld.getServer());
-        String uuid = player == null ? "" : player.getUuidAsString();
+        String uuid = player == null ? "" : player.getStringUUID();
         String wandItemId = state.getWandItemId(uuid);
         if (wandItemId != null && !wandItemId.isEmpty() && stack != null && !stack.isEmpty()) {
-            String heldId = String.valueOf(net.minecraft.registry.Registries.ITEM.getId(stack.getItem()));
+            String heldId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             if (wandItemId.equals(heldId)) {
                 BlockPos clickPos = hitResult.getBlockPos();
-                String dimId = serverWorld.getRegistryKey().getValue().toString();
+                String dimId = serverWorld.dimension().identifier().toString();
                 state.setWandPos2(uuid, dimId, clickPos.asLong());
-                player.sendMessage(net.minecraft.text.Text.literal("[CS] ").formatted(net.minecraft.util.Formatting.GOLD)
-                    .append(net.minecraft.text.Text.literal("Wand pos2 set to ").formatted(net.minecraft.util.Formatting.GRAY))
-                    .append(net.minecraft.text.Text.literal(clickPos.getX() + " " + clickPos.getY() + " " + clickPos.getZ()).formatted(net.minecraft.util.Formatting.YELLOW)), false);
-                cir.setReturnValue(ActionResult.SUCCESS);
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal("[CS] ").withStyle(net.minecraft.ChatFormatting.GOLD)
+                    .append(net.minecraft.network.chat.Component.literal("Wand pos2 set to ").withStyle(net.minecraft.ChatFormatting.GRAY))
+                    .append(net.minecraft.network.chat.Component.literal(clickPos.getX() + " " + clickPos.getY() + " " + clickPos.getZ()).withStyle(net.minecraft.ChatFormatting.YELLOW)), false);
+                cir.setReturnValue(InteractionResult.SUCCESS);
                 return;
             }
         }
@@ -68,18 +68,18 @@ public class ServerPlayerInteractionManagerMixin {
         var canonical = ContainerCanonicalizer.canonicalize(serverWorld, pos, be);
         if (canonical.snapshotInventory() == null) return;
         String containerType = canonical.containerType();
-        Inventory inv = canonical.snapshotInventory();
+        Container inv = canonical.snapshotInventory();
         long canonicalPosLong = canonical.posLong();
 
         state = ChestSortState.get(serverWorld.getServer());
-        state.setOpenContainer(player.getUuidAsString(), serverWorld.getRegistryKey().getValue().toString(), canonicalPosLong);
+        state.setOpenContainer(player.getStringUUID(), serverWorld.dimension().identifier().toString(), canonicalPosLong);
 
         // If this is a double chest, migrate any legacy per-half filters into the canonical key.
         // (Helps users upgrading from older versions where each half had a separate whitelist.)
         if ("chest".equals(containerType) && be instanceof ChestBlockEntity) {
             long clickedPosLong = pos.asLong();
             if (clickedPosLong != canonicalPosLong) {
-                String dimId = serverWorld.getRegistryKey().getValue().toString();
+                String dimId = serverWorld.dimension().identifier().toString();
 
                 var a = state.getFilterSpec(dimId, canonicalPosLong);
                 var b = state.getFilterSpec(dimId, clickedPosLong);
@@ -128,10 +128,11 @@ public class ServerPlayerInteractionManagerMixin {
         state.updateFromBlockEntity(serverWorld, () -> canonicalPosLong, inv, containerType);
 
         // Update client-side context (used for filter editing + sort button).
-        String dimId = serverWorld.getRegistryKey().getValue().toString();
+        String dimId = serverWorld.dimension().identifier().toString();
         var spec = state.getFilterSpec(dimId, canonicalPosLong);
         var blacklist = state.getBlacklistSpec(dimId, canonicalPosLong);
         boolean whitelistPriority = state.whitelistPriority(dimId, canonicalPosLong);
+        System.err.println("[ChestSort] Sending ContainerContext dim=" + dimId + " pos=" + canonicalPosLong + " type=" + containerType);
         // Keep legacy payload for older clients (items only).
         ServerPlayNetworking.send(player, new ContainerContextPayload(dimId, canonicalPosLong, containerType, spec.items()));
         // v2 payload for newer clients (items + tags).
@@ -145,7 +146,7 @@ public class ServerPlayerInteractionManagerMixin {
         // Locked player slots for "protected slots" feature.
         ChestSortNetworking.sendLockedSlotsTo(player);
 
-        String playerUuid = player.getUuidAsString();
+        String playerUuid = player.getStringUUID();
         String highlightsMode = state.getHighlightsMode(playerUuid);
         boolean highlightsOff = ChestSortState.HIGHLIGHTS_OFF.equals(highlightsMode);
 
@@ -170,17 +171,17 @@ public class ServerPlayerInteractionManagerMixin {
     }
 
     @Inject(
-        method = "interactBlock(Lnet/minecraft/server/network/ServerPlayerEntity;Lnet/minecraft/world/World;Lnet/minecraft/item/ItemStack;Lnet/minecraft/util/Hand;Lnet/minecraft/util/hit/BlockHitResult;)Lnet/minecraft/util/ActionResult;",
+        method = "useItemOn(Lnet/minecraft/server/level/ServerPlayer;Lnet/minecraft/world/level/Level;Lnet/minecraft/world/item/ItemStack;Lnet/minecraft/world/InteractionHand;Lnet/minecraft/world/phys/BlockHitResult;)Lnet/minecraft/world/InteractionResult;",
         at = @At("RETURN")
     )
-    private void chestsort$autosortAfterOpen(ServerPlayerEntity player, World world, ItemStack stack, Hand hand, BlockHitResult hitResult, CallbackInfoReturnable<ActionResult> cir) {
-        if (!(world instanceof ServerWorld serverWorld)) return;
+    private void chestsort$autosortAfterOpen(ServerPlayer player, Level world, ItemStack stack, InteractionHand hand, BlockHitResult hitResult, CallbackInfoReturnable<InteractionResult> cir) {
+        if (!(world instanceof ServerLevel serverWorld)) return;
 
-        ActionResult result = cir.getReturnValue();
-        if (result == null || result == ActionResult.PASS) return;
+        InteractionResult result = cir.getReturnValue();
+        if (result == null || result == InteractionResult.PASS) return;
 
         if (player == null) return;
-        if (!(player.currentScreenHandler instanceof net.minecraft.screen.GenericContainerScreenHandler handler)) return;
+        if (!(player.containerMenu instanceof net.minecraft.world.inventory.ChestMenu handler)) return;
 
         BlockPos pos = hitResult.getBlockPos();
         BlockEntity be = serverWorld.getBlockEntity(pos);
@@ -190,10 +191,10 @@ public class ServerPlayerInteractionManagerMixin {
         if (canonical.snapshotInventory() == null) return;
 
         long canonicalPosLong = canonical.posLong();
-        String dimId = serverWorld.getRegistryKey().getValue().toString();
+        String dimId = serverWorld.dimension().identifier().toString();
 
         ChestSortState state = ChestSortState.get(serverWorld.getServer());
-        String mode = state.getAutosortMode(player.getUuidAsString());
+        String mode = state.getAutosortMode(player.getStringUUID());
         if (ChestSortState.AUTOSORT_NEVER.equals(mode)) return;
 
         var filter = state.getFilterSpec(dimId, canonicalPosLong);
@@ -215,10 +216,10 @@ public class ServerPlayerInteractionManagerMixin {
         var effectiveBlacklist = blacklist == null ? new dev.dromer.chestsort.filter.ContainerFilterSpec(java.util.List.of(), java.util.List.of(), java.util.List.of()) : state.resolveBlacklistWithAppliedPresets(blacklist);
         boolean whitelistPriority = state.whitelistPriority(dimId, canonicalPosLong);
 
-        Inventory containerInv = handler.getInventory();
+        Container containerInv = handler.getContainer();
         ChestSortNetworking.SortOperationResult result2 = ChestSortNetworking.sortMatchingIntoDetailed(
             state,
-            player.getUuidAsString(),
+            player.getStringUUID(),
             dimId,
             canonicalPosLong,
             player.getInventory(),
@@ -231,7 +232,7 @@ public class ServerPlayerInteractionManagerMixin {
         );
         int moved = result2 == null ? 0 : result2.movedTotal();
         if (moved > 0) {
-            player.currentScreenHandler.sendContentUpdates();
+            player.containerMenu.sendAllDataToRemote();
             state.updateFromBlockEntity(serverWorld, () -> canonicalPosLong, containerInv, canonical.containerType());
         }
 

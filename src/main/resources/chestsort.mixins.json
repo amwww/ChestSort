@@ -5,7 +5,7 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "ServerPlayerInteractionManagerMixin",
-    "ServerPlayNetworkHandlerMixin"
+    "ServerGamePacketListenerImplMixin"
   ],
   "injectors": {
     "defaultRequire": 1

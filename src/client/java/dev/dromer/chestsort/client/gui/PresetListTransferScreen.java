@@ -10,14 +10,13 @@ import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.net.payload.ImportPresetPayload;
 import dev.dromer.chestsort.util.Cs2StringCodec;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.*;
+import net.minecraft.client.input.KeyEvent;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
 
 /** Checkbox-based preset list import/export helper screen. */
 public final class PresetListTransferScreen extends Screen {
@@ -35,9 +34,9 @@ public final class PresetListTransferScreen extends Screen {
 
     private int scrollY = 0;
 
-    private TextFieldWidget outputField;
-    private ButtonWidget primary;
-    private ButtonWidget secondary;
+    private EditBox outputField;
+    private Button primary;
+    private Button secondary;
 
     private String error = "";
 
@@ -46,7 +45,7 @@ public final class PresetListTransferScreen extends Screen {
         final ContainerFilterSpec whitelist;
         final ContainerFilterSpec blacklist;
         boolean selected;
-        TextFieldWidget nameField; // import only
+        EditBox nameField; // import only
 
         Entry(String originalName, ContainerFilterSpec whitelist, ContainerFilterSpec blacklist, boolean selected) {
             this.originalName = originalName == null ? "" : originalName;
@@ -57,13 +56,13 @@ public final class PresetListTransferScreen extends Screen {
 
         String desiredName() {
             if (nameField == null) return originalName.trim();
-            String t = nameField.getText();
-            return t == null ? "" : t.trim();
+            String t = nameField.getValue();
+            return t.trim();
         }
     }
 
     private PresetListTransferScreen(Mode mode, List<Entry> entries) {
-        super(Text.literal(mode == Mode.EXPORT_SELECT ? "Export selected presets" : "Import preset list"));
+        super(Component.literal(mode == Mode.EXPORT_SELECT ? "Export selected presets" : "Import preset list"));
         this.mode = mode == null ? Mode.EXPORT_SELECT : mode;
         this.entries = entries == null ? List.of() : entries;
     }
@@ -76,8 +75,8 @@ public final class PresetListTransferScreen extends Screen {
             if (name == null) continue;
             String n = name.trim();
             if (n.isEmpty()) continue;
-            ContainerFilterSpec wl = allWl == null ? null : allWl.get(n);
-            ContainerFilterSpec bl = allBl == null ? null : allBl.get(n);
+            ContainerFilterSpec wl = allWl.get(n);
+            ContainerFilterSpec bl = allBl.get(n);
             if ((wl == null || wl.isEmpty()) && (bl == null || bl.isEmpty())) continue;
             out.add(new Entry(n,
                 wl == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : wl,
@@ -89,8 +88,8 @@ public final class PresetListTransferScreen extends Screen {
 
     public static PresetListTransferScreen forImportList(String rawPresetList) {
         Cs2StringCodec.DecodedPresetList decoded = Cs2StringCodec.decodePresetList(rawPresetList);
-        LinkedHashMap<String, ContainerFilterSpec> whitelists = decoded == null ? new LinkedHashMap<>() : new LinkedHashMap<>(decoded.whitelists());
-        Map<String, ContainerFilterSpec> blacklists = decoded == null ? Map.of() : decoded.blacklists();
+        LinkedHashMap<String, ContainerFilterSpec> whitelists = new LinkedHashMap<>(decoded.whitelists());
+        Map<String, ContainerFilterSpec> blacklists = decoded.blacklists();
         ArrayList<Entry> out = new ArrayList<>();
         for (var e : whitelists.entrySet()) {
             if (e == null) continue;
@@ -119,11 +118,11 @@ public final class PresetListTransferScreen extends Screen {
         int listH = Math.max(80, this.height - (listTop + 74));
 
         // Output field (export only)
-        this.outputField = new TextFieldWidget(this.textRenderer, x, listTop + listH + 10, boxW, 20, Text.literal(""));
+        this.outputField = new EditBox(this.font, x, listTop + listH + 10, boxW, 20, Component.literal(""));
         this.outputField.setMaxLength(32767);
         this.outputField.setEditable(false);
-        this.outputField.setText("");
-        this.addDrawableChild(this.outputField);
+        this.outputField.setValue("");
+        this.addRenderableWidget(this.outputField);
 
         if (this.mode == Mode.IMPORT_LIST) {
             this.outputField.visible = false;
@@ -132,32 +131,32 @@ public final class PresetListTransferScreen extends Screen {
         // Per-entry fields (import only)
         if (this.mode == Mode.IMPORT_LIST) {
             for (Entry e : this.entries) {
-                TextFieldWidget tf = new TextFieldWidget(this.textRenderer, x + 44, 0, Math.max(0, boxW - 60 - CONFLICT_LABEL_W), 18, Text.literal(""));
+                EditBox tf = new EditBox(this.font, x + 44, 0, Math.max(0, boxW - 60 - CONFLICT_LABEL_W), 18, Component.literal(""));
                 tf.setMaxLength(64);
-                tf.setText(e.originalName);
+                tf.setValue(e.originalName);
                 e.nameField = tf;
-                this.addDrawableChild(tf);
+                this.addRenderableWidget(tf);
             }
         }
 
         int btnY = this.height - 34;
         if (this.mode == Mode.EXPORT_SELECT) {
-            this.primary = ButtonWidget.builder(Text.literal("Generate"), b -> generateExport())
-                .dimensions(x, btnY, (boxW - 6) / 2, 20)
+            this.primary = Button.builder(Component.literal("Generate"), b -> generateExport())
+                .bounds(x, btnY, (boxW - 6) / 2, 20)
                 .build();
-            this.secondary = ButtonWidget.builder(Text.literal("Close"), b -> this.close())
-                .dimensions(x + (boxW - 6) / 2 + 6, btnY, (boxW - 6) / 2, 20)
+            this.secondary = Button.builder(Component.literal("Close"), b -> this.onClose())
+                .bounds(x + (boxW - 6) / 2 + 6, btnY, (boxW - 6) / 2, 20)
                 .build();
         } else {
-            this.primary = ButtonWidget.builder(Text.literal("Import"), b -> tryImportSelected())
-                .dimensions(x, btnY, (boxW - 6) / 2, 20)
+            this.primary = Button.builder(Component.literal("Import"), b -> tryImportSelected())
+                .bounds(x, btnY, (boxW - 6) / 2, 20)
                 .build();
-            this.secondary = ButtonWidget.builder(Text.literal("Cancel"), b -> this.close())
-                .dimensions(x + (boxW - 6) / 2 + 6, btnY, (boxW - 6) / 2, 20)
+            this.secondary = Button.builder(Component.literal("Cancel"), b -> this.onClose())
+                .bounds(x + (boxW - 6) / 2 + 6, btnY, (boxW - 6) / 2, 20)
                 .build();
         }
-        this.addDrawableChild(this.primary);
-        this.addDrawableChild(this.secondary);
+        this.addRenderableWidget(this.primary);
+        this.addRenderableWidget(this.secondary);
 
         clampScroll(listTop, listH);
         updateEntryWidgetPositions(x, listTop, boxW, listH);
@@ -180,11 +179,11 @@ public final class PresetListTransferScreen extends Screen {
             }
             if (selectedWl.isEmpty()) {
                 this.error = "No presets selected";
-                if (this.outputField != null) this.outputField.setText("");
+                if (this.outputField != null) this.outputField.setValue("");
                 return;
             }
             String s = Cs2StringCodec.encodePresetList(selectedWl, selectedBl);
-            if (this.outputField != null) this.outputField.setText(s);
+            if (this.outputField != null) this.outputField.setValue(s);
             this.error = "";
         } catch (Throwable t) {
             String msg = t.getMessage();
@@ -251,7 +250,7 @@ public final class PresetListTransferScreen extends Screen {
                 }
             }
         }
-        this.close();
+        this.onClose();
     }
 
     private void updatePrimaryEnabled() {
@@ -337,11 +336,12 @@ public final class PresetListTransferScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean bl) {
-        int button = click.button();
-        double mouseX = click.x();
-        double mouseY = click.y();
-        if (button != 0) return super.mouseClicked(click, bl);
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        // Extract properties from the event wrapper
+        int button = event.button();
+        double mouseX = event.x();
+        double mouseY = event.y();
+        if (button != 0) return super.mouseClicked(event, doubleClick);
 
         int boxW = Math.min(420, Math.max(260, this.width - 40));
         int x = (this.width - boxW) / 2;
@@ -368,23 +368,23 @@ public final class PresetListTransferScreen extends Screen {
             }
         }
 
-        boolean handled = super.mouseClicked(click, bl);
+        boolean handled = super.mouseClicked(event, doubleClick);
         updatePrimaryEnabled();
         return handled;
     }
 
     @Override
-    public boolean keyPressed(KeyInput keyInput) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc != null && mc.options != null && mc.options.backKey != null && mc.options.backKey.matchesKey(keyInput)) {
-            this.close();
+    public boolean keyPressed(KeyEvent keyEvent) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.options.keyToggleGui.matches(keyEvent)) {
+            this.onClose();
             return true;
         }
-        return super.keyPressed(keyInput);
+        return super.keyPressed(keyEvent);
     }
 
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         context.fill(0, 0, this.width, this.height, 0xAA000000);
 
         int boxW = Math.min(420, Math.max(260, this.width - 40));
@@ -398,10 +398,10 @@ public final class PresetListTransferScreen extends Screen {
         context.fill(x - 8, y - 12, x + boxW + 8, this.height - 16, 0xAA000000);
 
         String screenTitle = this.mode == Mode.EXPORT_SELECT ? "Export selected presets" : "Import preset list";
-        context.drawTextWithShadow(this.textRenderer, Text.literal(screenTitle), x, y - 2, 0xFFFFFFFF);
+        context.text(this.font, Component.literal(screenTitle), x, y - 2, 0xFFFFFFFF);
 
-        context.drawTextWithShadow(this.textRenderer,
-            Text.literal(this.mode == Mode.EXPORT_SELECT ? "Check presets to include" : "Check presets to import, rename duplicates"),
+        context.text(this.font,
+            Component.literal(this.mode == Mode.EXPORT_SELECT ? "Check presets to include" : "Check presets to import, rename duplicates"),
             x,
             y + 10,
             0xFFAAAAAA
@@ -448,11 +448,11 @@ public final class PresetListTransferScreen extends Screen {
             context.fill(cbX, cbY, cbX + BOX_SIZE, cbY + BOX_SIZE, border);
             context.fill(cbX + 1, cbY + 1, cbX + BOX_SIZE - 1, cbY + BOX_SIZE - 1, fill);
             if (e.selected) {
-                context.drawTextWithShadow(this.textRenderer, Text.literal("x"), cbX + 4, cbY + 2, 0xFFFFFFFF);
+                context.text(this.font, Component.literal("x"), cbX + 4, cbY + 2, 0xFFFFFFFF);
             }
 
             if (this.mode == Mode.EXPORT_SELECT) {
-                context.drawTextWithShadow(this.textRenderer, Text.literal(e.originalName), x + 28, rowY + 7, 0xFFFFFF55);
+                context.text(this.font, Component.literal(e.originalName), x + 28, rowY + 7, 0xFFFFFF55);
             } else {
                 // Name field is a widget; just render conflict markers.
                 String desired = e.desiredName();
@@ -461,9 +461,9 @@ public final class PresetListTransferScreen extends Screen {
 
                 if (e.selected && (conflictExisting || conflictSelection)) {
                     String msg = conflictExisting ? "(exists)" : "(duplicate)";
-                    context.drawTextWithShadow(
-                        this.textRenderer,
-                        Text.literal(msg).formatted(Formatting.RED),
+                    context.text(
+                        this.font,
+                        Component.literal(msg).withStyle(ChatFormatting.RED),
                         x + boxW - CONFLICT_LABEL_W + 4,
                         rowY + 7,
                         0xFFFFFFFF
@@ -476,16 +476,16 @@ public final class PresetListTransferScreen extends Screen {
 
         // Output field label
         if (this.mode == Mode.EXPORT_SELECT) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal("Copy from box:"), x, listBottom + 2, 0xFFAAAAAA);
+            context.text(this.font, Component.literal("Copy from box:"), x, listBottom + 2, 0xFFAAAAAA);
         }
 
         // Error text
         if (this.error != null && !this.error.isEmpty()) {
-            context.drawTextWithShadow(this.textRenderer, Text.literal(this.error).formatted(Formatting.RED), x, this.height - 58, 0xFFFFFFFF);
+            context.text(this.font, Component.literal(this.error).withStyle(ChatFormatting.RED), x, this.height - 58, 0xFFFFFFFF);
         }
 
         updateEntryWidgetPositions(x, listTop, boxW, listH);
 
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
     }
 }

@@ -3,14 +3,15 @@ package dev.dromer.chestsort.client;
 import java.util.ArrayDeque;
 import java.util.Collection;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.screen.ScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
+import dev.dromer.chestsort.mixin.client.AbstractContainerScreenAccessor;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.ContainerInput;
 
 /** Runs a sequence of vanilla slot click actions over time (one per tick). */
 public final class ClientClickQueue {
-    public record ClickAction(int slotId, int button, SlotActionType actionType) {
+    public record ClickAction(int slotId, int button, ContainerInput actionType) {
     }
 
     private static final ArrayDeque<ClickAction> pending = new ArrayDeque<>();
@@ -30,30 +31,30 @@ public final class ClientClickQueue {
         onDone = null;
     }
 
-    public static void start(ScreenHandler handler, Collection<ClickAction> actions, Runnable onDoneCallback) {
+    public static void start(AbstractContainerMenu handler, Collection<ClickAction> actions, Runnable onDoneCallback) {
         clear();
         if (handler == null || actions == null || actions.isEmpty()) return;
-        pendingSyncId = handler.syncId;
+        pendingSyncId = handler.containerId;
         pending.addAll(actions);
         onDone = onDoneCallback;
     }
 
-    public static void tick(MinecraftClient client) {
+    public static void tick(Minecraft client) {
         if (client == null) return;
         if (pending.isEmpty()) return;
 
-        if (client.player == null || client.interactionManager == null) {
+        if (client.player == null || client.gameMode == null) {
             clear();
             return;
         }
 
-        if (!(client.currentScreen instanceof HandledScreen<?> handled)) {
+        if (!(client.gui.screen() instanceof AbstractContainerScreen<?> handled)) {
             clear();
             return;
         }
 
-        ScreenHandler handler = handled.getScreenHandler();
-        if (handler == null || handler.syncId != pendingSyncId) {
+        AbstractContainerMenu handler = ((AbstractContainerScreenAccessor) (Object) handled).chestsort$getHandler();
+        if (handler == null || handler.containerId != pendingSyncId) {
             clear();
             return;
         }
@@ -64,7 +65,7 @@ public final class ClientClickQueue {
             return;
         }
 
-        client.interactionManager.clickSlot(handler.syncId, action.slotId(), action.button(), action.actionType(), client.player);
+        client.gameMode.handleContainerInput(handler.containerId, action.slotId(), action.button(), action.actionType(), client.player);
 
         if (pending.isEmpty()) {
             Runnable done = onDone;

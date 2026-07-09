@@ -1,10 +1,10 @@
 package dev.dromer.chestsort.net.payload;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** Server -> client: current wand binding + selection (for rendering/UX). */
 public record WandSelectionPayload(
@@ -17,31 +17,31 @@ public record WandSelectionPayload(
     long pos2Long,
     long blockCount,
     int containerCount
-) implements CustomPayload {
-    public static final Id<WandSelectionPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "wand_selection"));
+) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<WandSelectionPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "wand_selection"));
 
-    public static final PacketCodec<RegistryByteBuf, WandSelectionPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, WandSelectionPayload> CODEC = StreamCodec.of(
         (buf, payload) -> {
-            buf.writeString(payload.wandItemId == null ? "" : payload.wandItemId);
+            buf.writeUtf(payload.wandItemId == null ? "" : payload.wandItemId);
 
             buf.writeBoolean(payload.hasPos1);
-            buf.writeString(payload.pos1DimensionId == null ? "" : payload.pos1DimensionId);
+            buf.writeUtf(payload.pos1DimensionId == null ? "" : payload.pos1DimensionId);
             buf.writeLong(payload.pos1Long);
 
             buf.writeBoolean(payload.hasPos2);
-            buf.writeString(payload.pos2DimensionId == null ? "" : payload.pos2DimensionId);
+            buf.writeUtf(payload.pos2DimensionId == null ? "" : payload.pos2DimensionId);
             buf.writeLong(payload.pos2Long);
 
             buf.writeLong(payload.blockCount);
             buf.writeVarInt(payload.containerCount);
         },
         buf -> new WandSelectionPayload(
-            buf.readString(),
+            buf.readUtf(),
             buf.readBoolean(),
-            buf.readString(),
+            buf.readUtf(),
             buf.readLong(),
             buf.readBoolean(),
-            buf.readString(),
+            buf.readUtf(),
             buf.readLong(),
             buf.readLong(),
             buf.readVarInt()
@@ -49,7 +49,7 @@ public record WandSelectionPayload(
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

@@ -1,24 +1,24 @@
 package dev.dromer.chestsort.net.payload;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
-public record ContainerHighlightPayload(String itemId, boolean highlight) implements CustomPayload {
-    public static final Id<ContainerHighlightPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "container_highlight"));
+public record ContainerHighlightPayload(String itemId, boolean highlight) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<ContainerHighlightPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "container_highlight"));
 
-    public static final PacketCodec<RegistryByteBuf, ContainerHighlightPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, ContainerHighlightPayload> CODEC = StreamCodec.of(
         (buf, payload) -> {
-            buf.writeString(payload.itemId == null ? "" : payload.itemId);
+            buf.writeUtf(payload.itemId == null ? "" : payload.itemId);
             buf.writeBoolean(payload.highlight);
         },
-        buf -> new ContainerHighlightPayload(buf.readString(), buf.readBoolean())
+        buf -> new ContainerHighlightPayload(buf.readUtf(), buf.readBoolean())
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

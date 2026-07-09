@@ -3,10 +3,10 @@ package dev.dromer.chestsort.util;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.chunk.ChunkStatus;
-import net.minecraft.world.chunk.WorldChunk;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 public final class WandSelectionUtil {
     private WandSelectionUtil() {
@@ -21,7 +21,7 @@ public final class WandSelectionUtil {
     }
 
     /** Returns canonical container positions (deduping multi-block containers) for LOADED chunks only. */
-    public static Set<Long> findLoadedContainerCanonicalPosLongsInBox(ServerWorld world, BlockPos a, BlockPos b) {
+    public static Set<Long> findLoadedContainerCanonicalPosLongsInBox(ServerLevel world, BlockPos a, BlockPos b) {
         if (world == null || a == null || b == null) return Set.of();
 
         int minX = Math.min(a.getX(), b.getX());
@@ -42,11 +42,11 @@ public final class WandSelectionUtil {
         for (int cx = minChunkX; cx <= maxChunkX; cx++) {
             for (int cz = minChunkZ; cz <= maxChunkZ; cz++) {
                 var chunk = world.getChunk(cx, cz, ChunkStatus.FULL, false);
-                if (!(chunk instanceof WorldChunk worldChunk)) continue;
+                if (!(chunk instanceof LevelChunk worldChunk)) continue;
 
                 for (var be : worldChunk.getBlockEntities().values()) {
                     if (be == null) continue;
-                    BlockPos pos = be.getPos();
+                    BlockPos pos = be.getBlockPos();
                     if (pos.getX() < minX || pos.getX() > maxX) continue;
                     if (pos.getY() < minY || pos.getY() > maxY) continue;
                     if (pos.getZ() < minZ || pos.getZ() > maxZ) continue;

@@ -1,10 +1,10 @@
 package dev.dromer.chestsort.net.payload;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -13,13 +13,13 @@ import java.util.List;
  * Sent after running /cs find to highlight matching containers in-world.
  * Only intended for client-side rendering; server remains authoritative.
  */
-public record FindHighlightsPayload(String dimensionId, String itemId, List<Long> posLongs) implements CustomPayload {
-    public static final Id<FindHighlightsPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "find_highlights"));
+public record FindHighlightsPayload(String dimensionId, String itemId, List<Long> posLongs) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<FindHighlightsPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "find_highlights"));
 
-    public static final PacketCodec<RegistryByteBuf, FindHighlightsPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, FindHighlightsPayload> CODEC = StreamCodec.of(
         (buf, payload) -> {
-            buf.writeString(payload.dimensionId == null ? "" : payload.dimensionId);
-            buf.writeString(payload.itemId == null ? "" : payload.itemId);
+            buf.writeUtf(payload.dimensionId == null ? "" : payload.dimensionId);
+            buf.writeUtf(payload.itemId == null ? "" : payload.itemId);
             List<Long> list = payload.posLongs == null ? List.of() : payload.posLongs;
             buf.writeVarInt(list.size());
             for (Long l : list) {
@@ -27,8 +27,8 @@ public record FindHighlightsPayload(String dimensionId, String itemId, List<Long
             }
         },
         buf -> {
-            String dim = buf.readString();
-            String item = buf.readString();
+            String dim = buf.readUtf();
+            String item = buf.readUtf();
             int n = buf.readVarInt();
             List<Long> pos = new ArrayList<>(Math.max(0, n));
             for (int i = 0; i < n; i++) {
@@ -39,7 +39,7 @@ public record FindHighlightsPayload(String dimensionId, String itemId, List<Long
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

@@ -19,16 +19,21 @@ public class ChestsortClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
-        // Load client-local presets for servers without ChestSort installed.
+        // This mod is client-only and never relies on any server-side support.
+        // Load client-local presets, per-container filters, and autosort preferences.
         ClientPresetStorage.loadIntoRegistry();
-
-        // Load client-local per-container filters for servers without ChestSort installed.
         ClientContainerFilterStorage.load();
+        ClientAutosortState.load();
+        ClientFilterSettings.load();
+        ClientContainerFindIndex.load();
 
-            ClientTickEvents.END_CLIENT_TICK.register(client -> {
-                ClientClickQueue.tick(client);
-                ClientQuickMoveQueue.tick(client);
-            });
+        ChestSortClientCommands.register();
+
+        ClientTickEvents.END_CLIENT_TICK.register(client -> {
+            ClientClickQueue.tick(client);
+            ClientQuickMoveQueue.tick(client);
+            ClientPendingScreen.tick(client);
+        });
 
         ClientPlayNetworking.registerGlobalReceiver(ContainerHighlightPayload.ID, (payload, context) -> {
             context.client().execute(() -> ClientHighlightState.set(payload.itemId(), payload.highlight()));
@@ -71,11 +76,11 @@ public class ChestsortClient implements ClientModInitializer {
                 byte mode = payload.mode();
                 String name = payload.name();
 
-                boolean inHandledContainer = (client.currentScreen instanceof net.minecraft.client.gui.screen.ingame.HandledScreen<?>)
+                boolean inHandledContainer = (client.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.InventoryScreen)
                     && ClientContainerContext.isChestOrBarrel();
 
                 if (mode == OpenPresetUiPayload.MODE_IMPORT) {
-                    client.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
+                    client.gui.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
                         dev.dromer.chestsort.client.gui.PresetTransferScreen.Mode.IMPORT,
                         ""
                     ));
@@ -83,7 +88,7 @@ public class ChestsortClient implements ClientModInitializer {
                 }
 
                 if (mode == OpenPresetUiPayload.MODE_EXPORT) {
-                    client.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
+                    client.gui.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
                         dev.dromer.chestsort.client.gui.PresetTransferScreen.Mode.EXPORT,
                         name
                     ));
@@ -91,7 +96,7 @@ public class ChestsortClient implements ClientModInitializer {
                 }
 
                 if (mode == OpenPresetUiPayload.MODE_EXPORT_ALL) {
-                    client.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
+                    client.gui.setScreen(new dev.dromer.chestsort.client.gui.PresetTransferScreen(
                         dev.dromer.chestsort.client.gui.PresetTransferScreen.Mode.EXPORT_ALL,
                         ""
                     ));
@@ -99,12 +104,12 @@ public class ChestsortClient implements ClientModInitializer {
                 }
 
                 if (mode == OpenPresetUiPayload.MODE_EXPORT_SELECT) {
-                    client.setScreen(dev.dromer.chestsort.client.gui.PresetListTransferScreen.forExportSelect());
+                    client.gui.setScreen(dev.dromer.chestsort.client.gui.PresetListTransferScreen.forExportSelect());
                     return;
                 }
 
                 if (mode == OpenPresetUiPayload.MODE_EDIT && !inHandledContainer) {
-                    client.setScreen(new dev.dromer.chestsort.client.gui.PresetEditorScreen(name));
+                    client.gui.setScreen(new dev.dromer.chestsort.client.gui.PresetEditorScreen(name));
                     return;
                 }
 
@@ -131,6 +136,7 @@ public class ChestsortClient implements ClientModInitializer {
         });
 
         ClientPlayNetworking.registerGlobalReceiver(LockedSlotsSyncPayload.ID, (payload, context) -> {
+            System.err.println("[ChestSort] Received LockedSlotsSyncPayload: " + payload.lockedSlots());
             context.client().execute(() -> ClientLockedSlotsState.setFromSync(payload.lockedSlots()));
         });
     }

@@ -3,22 +3,22 @@ package dev.dromer.chestsort.net.payload;
 import dev.dromer.chestsort.Chestsort;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 import java.util.ArrayList;
 import java.util.List;
 
-public record ContainerContextV2Payload(String dimensionId, long posLong, String containerType, ContainerFilterSpec filter) implements CustomPayload {
-    public static final Id<ContainerContextV2Payload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "container_context_v2"));
+public record ContainerContextV2Payload(String dimensionId, long posLong, String containerType, ContainerFilterSpec filter) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<ContainerContextV2Payload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "container_context_v2"));
 
-    public static final PacketCodec<RegistryByteBuf, ContainerContextV2Payload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, ContainerContextV2Payload> CODEC = StreamCodec.of(
         (buf, payload) -> {
-            buf.writeString(payload.dimensionId == null ? "" : payload.dimensionId);
+            buf.writeUtf(payload.dimensionId == null ? "" : payload.dimensionId);
             buf.writeLong(payload.posLong);
-            buf.writeString(payload.containerType == null ? "" : payload.containerType);
+            buf.writeUtf(payload.containerType == null ? "" : payload.containerType);
 
             ContainerFilterSpec spec = payload.filter == null ? new ContainerFilterSpec(List.of(), List.of(), List.of()) : payload.filter;
             List<String> items = spec.items() == null ? List.of() : spec.items();
@@ -27,46 +27,46 @@ public record ContainerContextV2Payload(String dimensionId, long posLong, String
 
             buf.writeVarInt(items.size());
             for (String itemId : items) {
-                buf.writeString(itemId == null ? "" : itemId);
+                buf.writeUtf(itemId == null ? "" : itemId);
             }
 
             buf.writeVarInt(tags.size());
             for (TagFilterSpec tag : tags) {
                 String tagId = tag == null ? "" : (tag.tagId() == null ? "" : tag.tagId());
-                buf.writeString(tagId);
+                buf.writeUtf(tagId);
                 List<String> exceptions = (tag == null || tag.exceptions() == null) ? List.of() : tag.exceptions();
                 buf.writeVarInt(exceptions.size());
                 for (String exc : exceptions) {
-                    buf.writeString(exc == null ? "" : exc);
+                    buf.writeUtf(exc == null ? "" : exc);
                 }
             }
 
             buf.writeVarInt(presets.size());
             for (String name : presets) {
-                buf.writeString(name == null ? "" : name);
+                buf.writeUtf(name == null ? "" : name);
             }
 
             buf.writeBoolean(spec.autosort());
         },
         buf -> {
-            String dim = buf.readString();
+            String dim = buf.readUtf();
             long pos = buf.readLong();
-            String type = buf.readString();
+            String type = buf.readUtf();
 
             int nItems = buf.readVarInt();
             List<String> items = new ArrayList<>(Math.max(0, nItems));
             for (int i = 0; i < nItems; i++) {
-                items.add(buf.readString());
+                items.add(buf.readUtf());
             }
 
             int nTags = buf.readVarInt();
             List<TagFilterSpec> tags = new ArrayList<>(Math.max(0, nTags));
             for (int i = 0; i < nTags; i++) {
-                String tagId = buf.readString();
+                String tagId = buf.readUtf();
                 int nExc = buf.readVarInt();
                 List<String> exceptions = new ArrayList<>(Math.max(0, nExc));
                 for (int j = 0; j < nExc; j++) {
-                    exceptions.add(buf.readString());
+                    exceptions.add(buf.readUtf());
                 }
                 tags.add(new TagFilterSpec(tagId, exceptions));
             }
@@ -74,7 +74,7 @@ public record ContainerContextV2Payload(String dimensionId, long posLong, String
             int nPresets = buf.readVarInt();
             List<String> presets = new ArrayList<>(Math.max(0, nPresets));
             for (int i = 0; i < nPresets; i++) {
-                presets.add(buf.readString());
+                presets.add(buf.readUtf());
             }
 
             boolean autosort = buf.readBoolean();
@@ -84,7 +84,7 @@ public record ContainerContextV2Payload(String dimensionId, long posLong, String
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

@@ -1,13 +1,13 @@
 package dev.dromer.chestsort.client;
 
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.minecraft.network.packet.CustomPayload;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 
 public final class ClientNetworkingUtil {
     private ClientNetworkingUtil() {
     }
 
-    public static boolean canSend(CustomPayload.Id<?> id) {
+    public static boolean canSend(CustomPacketPayload.Type<?> id) {
         if (id == null) return false;
         try {
             return ClientPlayNetworking.canSend(id);
@@ -16,9 +16,12 @@ public final class ClientNetworkingUtil {
         }
     }
 
-    public static boolean sendSafe(CustomPayload payload) {
+    public static boolean sendSafe(CustomPacketPayload payload) {
         if (payload == null) return false;
-        if (!canSend(payload.getId())) return false;
+        if (!canSend(payload.type())) {
+            System.err.println("[ChestSort] sendSafe: canSend() returned false for " + payload);
+            return false;
+        }
         ClientPlayNetworking.send(payload);
         return true;
     }

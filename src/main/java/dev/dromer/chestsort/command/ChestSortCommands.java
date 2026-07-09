@@ -26,25 +26,25 @@ import dev.dromer.chestsort.util.ContainerCanonicalizer;
 import dev.dromer.chestsort.util.WandSelectionUtil;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.command.CommandRegistryAccess;
-import net.minecraft.command.CommandSource;
-import net.minecraft.command.argument.BlockPosArgumentType;
-import net.minecraft.command.argument.ItemStackArgumentType;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.CommandBuildContext;
+import net.minecraft.commands.CommandSourceStack;
+import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.commands.arguments.item.ItemArgument;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.command.CommandManager;
-import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.Identifier;
-import net.minecraft.util.hit.BlockHitResult;
-import net.minecraft.util.hit.HitResult;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 
 public final class ChestSortCommands {
     private ChestSortCommands() {
@@ -54,12 +54,12 @@ public final class ChestSortCommands {
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> register(dispatcher, registryAccess));
     }
 
-    private static void register(CommandDispatcher<ServerCommandSource> dispatcher, CommandRegistryAccess registryAccess) {
-        dispatcher.register(CommandManager.literal("cs")
-            .then(CommandManager.literal("help")
+    private static void register(CommandDispatcher<CommandSourceStack> dispatcher, CommandBuildContext registryAccess) {
+        dispatcher.register(Commands.literal("cs")
+            .then(Commands.literal("help")
                 .executes(ctx -> help(ctx.getSource())))
-            .then(CommandManager.literal("autosort")
-                .then(CommandManager.argument("mode", StringArgumentType.word())
+            .then(Commands.literal("autosort")
+                .then(Commands.argument("mode", StringArgumentType.word())
                     .suggests((ctx, builder) -> {
                         builder.suggest(ChestSortState.AUTOSORT_NEVER);
                         builder.suggest(ChestSortState.AUTOSORT_SELECTED);
@@ -67,10 +67,10 @@ public final class ChestSortCommands {
                         return builder.buildFuture();
                     })
                     .executes(ctx -> autosortMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-            .then(CommandManager.literal("highlights")
-                .then(CommandManager.literal("dismiss")
+            .then(Commands.literal("highlights")
+                .then(Commands.literal("dismiss")
                     .executes(ctx -> highlightsDismiss(ctx.getSource())))
-                .then(CommandManager.argument("mode", StringArgumentType.word())
+                .then(Commands.argument("mode", StringArgumentType.word())
                     .suggests((ctx, builder) -> {
                         builder.suggest(ChestSortState.HIGHLIGHTS_ON);
                         builder.suggest(ChestSortState.HIGHLIGHTS_OFF);
@@ -78,17 +78,17 @@ public final class ChestSortCommands {
                         return builder.buildFuture();
                     })
                     .executes(ctx -> highlightsMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-            .then(CommandManager.literal("tags")
-                .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
-                    .executes(ctx -> tags(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
-            .then(CommandManager.literal("blacklist")
-                .then(CommandManager.literal("list")
+            .then(Commands.literal("tags")
+                .then(Commands.argument("item", ItemArgument.item(registryAccess))
+                    .executes(ctx -> tags(ctx.getSource(), ItemArgument.getItem(ctx, "item").item().value()))))
+            .then(Commands.literal("blacklist")
+                .then(Commands.literal("list")
                     .executes(ctx -> blacklistList(ctx.getSource())))
-                .then(CommandManager.literal("clear")
+                .then(Commands.literal("clear")
                     .executes(ctx -> blacklistClear(ctx.getSource())))
-                .then(CommandManager.literal("mode")
+                .then(Commands.literal("mode")
                     .executes(ctx -> blacklistMode(ctx.getSource(), ""))
-                    .then(CommandManager.argument("mode", StringArgumentType.word())
+                    .then(Commands.argument("mode", StringArgumentType.word())
                         .suggests((ctx, builder) -> {
                             builder.suggest("preventSort");
                             builder.suggest("strictPreventSort");
@@ -97,13 +97,13 @@ public final class ChestSortCommands {
                             return builder.buildFuture();
                         })
                         .executes(ctx -> blacklistMode(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-                .then(CommandManager.literal("add")
-                    .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
-                        .executes(ctx -> blacklistAdd(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
-                .then(CommandManager.literal("addPreset")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("add")
+                    .then(Commands.argument("item", ItemArgument.item(registryAccess))
+                        .executes(ctx -> blacklistAdd(ctx.getSource(), ItemArgument.getItem(ctx, "item").item().value()))))
+                .then(Commands.literal("addPreset")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
-                        .then(CommandManager.argument("mode", StringArgumentType.word())
+                        .then(Commands.argument("mode", StringArgumentType.word())
                             .suggests((ctx, builder) -> {
                                 builder.suggest("blacklist");
                                 builder.suggest("whitelist");
@@ -115,84 +115,84 @@ public final class ChestSortCommands {
                                 StringArgumentType.getString(ctx, "name"),
                                 StringArgumentType.getString(ctx, "mode")
                             )))))
-                .then(CommandManager.literal("remove")
-                    .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
-                        .executes(ctx -> blacklistRemove(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
+                .then(Commands.literal("remove")
+                    .then(Commands.argument("item", ItemArgument.item(registryAccess))
+                        .executes(ctx -> blacklistRemove(ctx.getSource(), ItemArgument.getItem(ctx, "item").item().value()))))
             )
-            .then(CommandManager.literal("scan")
+            .then(Commands.literal("scan")
                 .executes(ctx -> scan(ctx.getSource())))
-            .then(CommandManager.literal("find")
-                .then(CommandManager.argument("item", ItemStackArgumentType.itemStack(registryAccess))
-                    .executes(ctx -> find(ctx.getSource(), ItemStackArgumentType.getItemStackArgument(ctx, "item").getItem()))))
-            .then(CommandManager.literal("presets")
-                .then(CommandManager.literal("list")
+            .then(Commands.literal("find")
+                .then(Commands.argument("item", ItemArgument.item(registryAccess))
+                    .executes(ctx -> find(ctx.getSource(), ItemArgument.getItem(ctx, "item").item().value()))))
+            .then(Commands.literal("presets")
+                .then(Commands.literal("list")
                     .executes(ctx -> presetsList(ctx.getSource())))
-                .then(CommandManager.literal("add")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("add")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .executes(ctx -> presetsAdd(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("duplicate")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("duplicate")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsDuplicate(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("remove")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("remove")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsRemove(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("rename")
-                    .then(CommandManager.argument("old", StringArgumentType.string())
+                .then(Commands.literal("rename")
+                    .then(Commands.argument("old", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
-                        .then(CommandManager.argument("new", StringArgumentType.string())
+                        .then(Commands.argument("new", StringArgumentType.string())
                             .executes(ctx -> presetsRename(ctx.getSource(), StringArgumentType.getString(ctx, "old"), StringArgumentType.getString(ctx, "new"))))))
-                .then(CommandManager.literal("edit")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("edit")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsEdit(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("import")
+                .then(Commands.literal("import")
                     .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_IMPORT, "")))
-                .then(CommandManager.literal("export")
-                    .then(CommandManager.argument("name", StringArgumentType.string())
+                .then(Commands.literal("export")
+                    .then(Commands.argument("name", StringArgumentType.string())
                         .suggests((ctx, builder) -> suggestPresetName(ctx.getSource(), builder))
                         .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT, StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("exportSelect")
+                .then(Commands.literal("exportSelect")
                     .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT_SELECT, "")))
-                .then(CommandManager.literal("exportAll")
+                .then(Commands.literal("exportAll")
                     .executes(ctx -> presetsOpenUi(ctx.getSource(), OpenPresetUiPayload.MODE_EXPORT_ALL, "")))
             )
-            .then(CommandManager.literal("wand")
-                .then(CommandManager.literal("bind")
+            .then(Commands.literal("wand")
+                .then(Commands.literal("bind")
                     .executes(ctx -> wandBind(ctx.getSource())))
-                .then(CommandManager.literal("unbind")
+                .then(Commands.literal("unbind")
                     .executes(ctx -> wandUnbind(ctx.getSource())))
-                .then(CommandManager.literal("deselect")
+                .then(Commands.literal("deselect")
                     .executes(ctx -> wandDeselect(ctx.getSource())))
-                .then(CommandManager.literal("copy")
-                    .then(CommandManager.argument("pos", BlockPosArgumentType.blockPos())
+                .then(Commands.literal("copy")
+                    .then(Commands.argument("pos", BlockPosArgument.blockPos())
                         .suggests((ctx, builder) -> suggestLookBlock(ctx.getSource(), builder))
-                        .executes(ctx -> wandCopy(ctx.getSource(), BlockPosArgumentType.getBlockPos(ctx, "pos"))))
+                        .executes(ctx -> wandCopy(ctx.getSource(), BlockPosArgument.getBlockPos(ctx, "pos"))))
                     .executes(ctx -> wandCopy(ctx.getSource(), null)))
-                .then(CommandManager.literal("paste")
+                .then(Commands.literal("paste")
                     .executes(ctx -> wandPaste(ctx.getSource())))
-                .then(CommandManager.literal("autosort")
-                    .then(CommandManager.argument("mode", StringArgumentType.word())
+                .then(Commands.literal("autosort")
+                    .then(Commands.argument("mode", StringArgumentType.word())
                         .suggests((ctx, builder) -> {
                             builder.suggest("on");
                             builder.suggest("off");
                             return builder.buildFuture();
                         })
                         .executes(ctx -> wandAutosort(ctx.getSource(), StringArgumentType.getString(ctx, "mode")))))
-                .then(CommandManager.literal("clear")
+                .then(Commands.literal("clear")
                     .executes(ctx -> wandClear(ctx.getSource())))
-                .then(CommandManager.literal("merge")
+                .then(Commands.literal("merge")
                     .executes(ctx -> wandMerge(ctx.getSource())))
             )
         );
     }
 
-    private static CompletableFuture<Suggestions> suggestLookBlock(ServerCommandSource source, SuggestionsBuilder builder) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static CompletableFuture<Suggestions> suggestLookBlock(CommandSourceStack source, SuggestionsBuilder builder) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) return builder.buildFuture();
 
-        HitResult hit = player.raycast(6.0, 0.0f, false);
+        HitResult hit = player.pick(6.0, 0.0f, false);
         if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
             var pos = bhr.getBlockPos();
             builder.suggest(pos.getX() + " " + pos.getY() + " " + pos.getZ());
@@ -200,41 +200,41 @@ public final class ChestSortCommands {
         return builder.buildFuture();
     }
 
-    private static CompletableFuture<Suggestions> suggestPresetName(ServerCommandSource source, SuggestionsBuilder builder) {
+    private static CompletableFuture<Suggestions> suggestPresetName(CommandSourceStack source, SuggestionsBuilder builder) {
         if (source == null) return builder.buildFuture();
         ChestSortState state = ChestSortState.get(source.getServer());
-        return CommandSource.suggestMatching(state.getPresets().keySet(), builder);
+        return SharedSuggestionProvider.suggest(state.getPresets().keySet(), builder);
     }
 
-    private static ServerWorld getWorldByDimId(MinecraftServer server, String dimId) {
+    private static net.minecraft.server.level.ServerLevel getWorldByDimId(MinecraftServer server, String dimId) {
         if (server == null || dimId == null || dimId.isEmpty()) return null;
-        for (ServerWorld w : server.getWorlds()) {
+        for (net.minecraft.server.level.ServerLevel w : server.getAllLevels()) {
             if (w == null) continue;
-            String id = w.getRegistryKey().getValue().toString();
+            String id = w.dimension().identifier().toString();
             if (dimId.equals(id)) return w;
         }
         return null;
     }
 
-    private static int wandBind(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandBind(CommandSourceStack source) {
+        net.minecraft.server.level.ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand bind must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand bind must be run by a player"));
             return 0;
         }
 
-        ItemStack held = player.getMainHandStack();
+        ItemStack held = player.getMainHandItem();
         if (held == null || held.isEmpty()) {
-            source.sendError(Text.literal("[CS] Hold an item in your main hand to bind as the wand"));
+            source.sendFailure(Component.literal("[CS] Hold an item in your main hand to bind as the wand"));
             return 0;
         }
 
-        String itemId = String.valueOf(Registries.ITEM.getId(held.getItem()));
+        String itemId = BuiltInRegistries.ITEM.getKey(held.getItem()).toString();
         ChestSortState state = ChestSortState.get(source.getServer());
-        state.setWandItemId(player.getUuidAsString(), itemId);
+        state.setWandItemId(player.getStringUUID(), itemId);
 
         // Sync to client so click interception works immediately.
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         var p1 = state.getWandPos1(uuid);
         var p2 = state.getWandPos2(uuid);
         ServerPlayNetworking.send(player, new WandSelectionPayload(
@@ -249,20 +249,20 @@ public final class ChestSortCommands {
             0
         ));
 
-        source.sendFeedback(() -> Text.literal("[CS] Wand bound to: ").formatted(Formatting.GOLD)
-            .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Wand bound to: ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(itemId).withStyle(ChatFormatting.YELLOW)), false);
         return 1;
     }
 
-    private static int wandUnbind(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandUnbind(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand unbind must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand unbind must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
 
         state.setWandItemId(uuid, "");
         state.clearWandSelection(uuid);
@@ -280,22 +280,22 @@ public final class ChestSortCommands {
             0
         ));
 
-        source.sendFeedback(() -> Text.literal("[CS] Wand unbound").formatted(Formatting.GOLD), false);
+        source.sendSuccess(() -> Component.literal("[CS] Wand unbound").withStyle(ChatFormatting.GOLD), false);
         return 1;
     }
 
-    private static int wandDeselect(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandDeselect(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand deselect must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand deselect must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         String wandItemId = state.getWandItemId(uuid);
         if (wandItemId == null || wandItemId.isEmpty()) {
-            source.sendError(Text.literal("[CS] No wand is bound. Use /cs wand bind first."));
+            source.sendFailure(Component.literal("[CS] No wand is bound. Use /cs wand bind first."));
             return 0;
         }
 
@@ -313,76 +313,76 @@ public final class ChestSortCommands {
             0
         ));
 
-        source.sendFeedback(() -> Text.literal("[CS] Wand selection cleared").formatted(Formatting.GOLD), false);
+        source.sendSuccess(() -> Component.literal("[CS] Wand selection cleared").withStyle(ChatFormatting.GOLD), false);
         return 1;
     }
 
-    private static int wandCopy(ServerCommandSource source, net.minecraft.util.math.BlockPos posArg) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandCopy(CommandSourceStack source, net.minecraft.core.BlockPos posArg) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand copy must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand copy must be run by a player"));
             return 0;
         }
 
-        if (!(player.getEntityWorld() instanceof ServerWorld world)) {
-            source.sendError(Text.literal("[CS] Not in a server world"));
+        if (!(player.level() instanceof ServerLevel world)) {
+            source.sendFailure(Component.literal("[CS] Not in a server world"));
             return 0;
         }
-        net.minecraft.util.math.BlockPos pos = posArg;
+        net.minecraft.core.BlockPos pos = posArg;
         if (pos == null) {
-            HitResult hit = player.raycast(6.0, 0.0f, false);
+            HitResult hit = player.pick(6.0, 0.0f, false);
             if (hit instanceof BlockHitResult bhr && hit.getType() == HitResult.Type.BLOCK) {
                 pos = bhr.getBlockPos();
             }
         }
         if (pos == null) {
-            source.sendError(Text.literal("[CS] Look at a container block (or pass a block position)"));
+            source.sendFailure(Component.literal("[CS] Look at a container block (or pass a block position)"));
             return 0;
         }
 
         var be = world.getBlockEntity(pos);
         if (be == null) {
-            source.sendError(Text.literal("[CS] No block entity at that position"));
+            source.sendFailure(Component.literal("[CS] No block entity at that position"));
             return 0;
         }
 
         var canonical = ContainerCanonicalizer.canonicalize(world, pos, be);
         if (canonical.snapshotInventory() == null) {
-            source.sendError(Text.literal("[CS] That block is not a supported container"));
+            source.sendFailure(Component.literal("[CS] That block is not a supported container"));
             return 0;
         }
 
-        String dimId = world.getRegistryKey().getValue().toString();
+        String dimId = world.dimension().identifier().toString();
         long canonicalPosLong = canonical.posLong();
 
         ChestSortState state = ChestSortState.get(source.getServer());
         ContainerFilterSpec spec = state.getFilterSpec(dimId, canonicalPosLong);
-        state.setWandClipboard(player.getUuidAsString(), spec);
+        state.setWandClipboard(player.getStringUUID(), spec);
 
-        source.sendFeedback(() -> Text.literal("[CS] Copied filter to wand clipboard").formatted(Formatting.GOLD), false);
+        source.sendSuccess(() -> Component.literal("[CS] Copied filter to wand clipboard").withStyle(ChatFormatting.GOLD), false);
         return 1;
     }
 
-    private static ChestSortState.WandPos requireWandPos(ChestSortState state, String uuid, int which, ServerCommandSource source) {
+    private static ChestSortState.WandPos requireWandPos(ChestSortState state, String uuid, int which, CommandSourceStack source) {
         ChestSortState.WandPos pos = (which == 1) ? state.getWandPos1(uuid) : state.getWandPos2(uuid);
         if (pos == null) {
-            source.sendError(Text.literal("[CS] Missing wand pos" + which + ". Set pos1 with left-click and pos2 with right-click using your bound wand."));
+            source.sendFailure(Component.literal("[CS] Missing wand pos" + which + ". Set pos1 with left-click and pos2 with right-click using your bound wand."));
         }
         return pos;
     }
 
-    private static int wandPaste(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandPaste(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand paste must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand paste must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         ContainerFilterSpec clip = state.getWandClipboard(uuid);
         if (clip == null) {
-            source.sendError(Text.literal("[CS] Wand clipboard is empty. Use /cs wand copy first."));
+            source.sendFailure(Component.literal("[CS] Wand clipboard is empty. Use /cs wand copy first."));
             return 0;
         }
 
@@ -390,13 +390,13 @@ public final class ChestSortCommands {
         ChestSortState.WandPos p2 = requireWandPos(state, uuid, 2, source);
         if (p1 == null || p2 == null) return 0;
         if (!p1.dimensionId().equals(p2.dimensionId())) {
-            source.sendError(Text.literal("[CS] pos1 and pos2 must be in the same dimension"));
+            source.sendFailure(Component.literal("[CS] pos1 and pos2 must be in the same dimension"));
             return 0;
         }
 
-        ServerWorld world = getWorldByDimId(source.getServer(), p1.dimensionId());
+        ServerLevel world = getWorldByDimId(source.getServer(), p1.dimensionId());
         if (world == null) {
-            source.sendError(Text.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
+            source.sendFailure(Component.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
             return 0;
         }
 
@@ -405,16 +405,16 @@ public final class ChestSortCommands {
             state.setFilterSpec(p1.dimensionId(), posLong, clip);
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Pasted filter to ").formatted(Formatting.GOLD)
-            .append(Text.literal(String.valueOf(targets.size())).formatted(Formatting.YELLOW))
-            .append(Text.literal(" containers (loaded)").formatted(Formatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Pasted filter to ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(String.valueOf(targets.size())).withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" containers (loaded)").withStyle(ChatFormatting.GRAY)), false);
         return 1;
     }
 
-    private static int wandAutosort(ServerCommandSource source, String mode) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandAutosort(CommandSourceStack source, String mode) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand autosort must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand autosort must be run by a player"));
             return 0;
         }
 
@@ -423,23 +423,23 @@ public final class ChestSortCommands {
         if ("on".equals(m)) on = true;
         else if ("off".equals(m)) on = false;
         else {
-            source.sendError(Text.literal("[CS] Invalid mode. Use: on | off"));
+            source.sendFailure(Component.literal("[CS] Invalid mode. Use: on | off"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         ChestSortState.WandPos p1 = requireWandPos(state, uuid, 1, source);
         ChestSortState.WandPos p2 = requireWandPos(state, uuid, 2, source);
         if (p1 == null || p2 == null) return 0;
         if (!p1.dimensionId().equals(p2.dimensionId())) {
-            source.sendError(Text.literal("[CS] pos1 and pos2 must be in the same dimension"));
+            source.sendFailure(Component.literal("[CS] pos1 and pos2 must be in the same dimension"));
             return 0;
         }
 
-        ServerWorld world = getWorldByDimId(source.getServer(), p1.dimensionId());
+        ServerLevel world = getWorldByDimId(source.getServer(), p1.dimensionId());
         if (world == null) {
-            source.sendError(Text.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
+            source.sendFailure(Component.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
             return 0;
         }
 
@@ -450,34 +450,34 @@ public final class ChestSortCommands {
             state.setFilterSpec(p1.dimensionId(), posLong, updated);
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Set autosort ").formatted(Formatting.GOLD)
-            .append(Text.literal(on ? "ON" : "OFF").formatted(on ? Formatting.GREEN : Formatting.RED))
-            .append(Text.literal(" for ").formatted(Formatting.GRAY))
-            .append(Text.literal(String.valueOf(targets.size())).formatted(Formatting.YELLOW))
-            .append(Text.literal(" containers (loaded)").formatted(Formatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Set autosort ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(on ? "ON" : "OFF").withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED))
+            .append(Component.literal(" for ").withStyle(ChatFormatting.GRAY))
+            .append(Component.literal(String.valueOf(targets.size())).withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" containers (loaded)").withStyle(ChatFormatting.GRAY)), false);
         return 1;
     }
 
-    private static int wandClear(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandClear(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand clear must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand clear must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         ChestSortState.WandPos p1 = requireWandPos(state, uuid, 1, source);
         ChestSortState.WandPos p2 = requireWandPos(state, uuid, 2, source);
         if (p1 == null || p2 == null) return 0;
         if (!p1.dimensionId().equals(p2.dimensionId())) {
-            source.sendError(Text.literal("[CS] pos1 and pos2 must be in the same dimension"));
+            source.sendFailure(Component.literal("[CS] pos1 and pos2 must be in the same dimension"));
             return 0;
         }
 
-        ServerWorld world = getWorldByDimId(source.getServer(), p1.dimensionId());
+        ServerLevel world = getWorldByDimId(source.getServer(), p1.dimensionId());
         if (world == null) {
-            source.sendError(Text.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
+            source.sendFailure(Component.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
             return 0;
         }
 
@@ -487,32 +487,32 @@ public final class ChestSortCommands {
             state.setFilterSpec(p1.dimensionId(), posLong, cleared);
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Cleared filters for ").formatted(Formatting.GOLD)
-            .append(Text.literal(String.valueOf(targets.size())).formatted(Formatting.YELLOW))
-            .append(Text.literal(" containers (loaded)").formatted(Formatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Cleared filters for ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(String.valueOf(targets.size())).withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" containers (loaded)").withStyle(ChatFormatting.GRAY)), false);
         return 1;
     }
 
-    private static int wandMerge(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int wandMerge(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs wand merge must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs wand merge must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         ChestSortState.WandPos p1 = requireWandPos(state, uuid, 1, source);
         ChestSortState.WandPos p2 = requireWandPos(state, uuid, 2, source);
         if (p1 == null || p2 == null) return 0;
         if (!p1.dimensionId().equals(p2.dimensionId())) {
-            source.sendError(Text.literal("[CS] pos1 and pos2 must be in the same dimension"));
+            source.sendFailure(Component.literal("[CS] pos1 and pos2 must be in the same dimension"));
             return 0;
         }
 
-        ServerWorld world = getWorldByDimId(source.getServer(), p1.dimensionId());
+        ServerLevel world = getWorldByDimId(source.getServer(), p1.dimensionId());
         if (world == null) {
-            source.sendError(Text.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
+            source.sendFailure(Component.literal("[CS] Could not resolve world for dimension: " + p1.dimensionId()));
             return 0;
         }
 
@@ -549,143 +549,143 @@ public final class ChestSortCommands {
         ContainerFilterSpec merged = new ContainerFilterSpec(List.copyOf(mergedItems), tags, List.copyOf(mergedPresets), anyAutosort).normalized();
         state.setWandClipboard(uuid, merged);
 
-        source.sendFeedback(() -> Text.literal("[CS] Merged ").formatted(Formatting.GOLD)
-            .append(Text.literal(String.valueOf(targets.size())).formatted(Formatting.YELLOW))
-            .append(Text.literal(" containers into wand clipboard").formatted(Formatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Merged ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(String.valueOf(targets.size())).withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" containers into wand clipboard").withStyle(ChatFormatting.GRAY)), false);
         return 1;
     }
 
-    private static int help(ServerCommandSource source) {
-        source.sendFeedback(() -> Text.literal("[CS] ").formatted(Formatting.GOLD)
-            .append(Text.literal("ChestSort help").formatted(Formatting.YELLOW)), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+    private static int help(CommandSourceStack source) {
+        source.sendSuccess(() -> Component.literal("[CS] ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal("ChestSort help").withStyle(ChatFormatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("What this mod does:").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- Lets you define per-container filter rules (items + tags).").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- Lets you save reusable rules as presets, then apply them to containers.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- Adds a container-side UI to edit rules and a preset editor UI.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("What this mod does:").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- Lets you define per-container filter rules (items + tags).").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- Lets you save reusable rules as presets, then apply them to containers.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- Adds a container-side UI to edit rules and a preset editor UI.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("Container filter UI (how to use):").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- Open a chest/barrel, then click the \"Filter\" button.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- Left panel shows your current filter (Filter Items / Filter Tags / Filter Presets).").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("Autosort").formatted(Formatting.YELLOW))
-            .append(Text.literal(" toggle (left panel) enables automatic sorting for that container (depending on ").formatted(Formatting.GRAY))
-            .append(Text.literal("/cs autosort").formatted(Formatting.GREEN))
-            .append(Text.literal(" mode).").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- Right panel shows search results; click the green + to add.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- Click a tag on the left to open its exception browser; green + adds exceptions, red x removes.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("Container filter UI (how to use):").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- Open a chest/barrel, then click the \"Filter\" button.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- Left panel shows your current filter (Filter Items / Filter Tags / Filter Presets).").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("Autosort").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" toggle (left panel) enables automatic sorting for that container (depending on ").withStyle(ChatFormatting.GRAY))
+            .append(Component.literal("/cs autosort").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal(" mode).").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- Right panel shows search results; click the green + to add.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- Click a tag on the left to open its exception browser; green + adds exceptions, red x removes.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("Search tips:").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- Type normal text to search items.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- Type ").formatted(Formatting.GRAY)
-            .append(Text.literal("#something").formatted(Formatting.LIGHT_PURPLE))
-            .append(Text.literal(" to search tags.").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- Type ").formatted(Formatting.GRAY)
-            .append(Text.literal("&name").formatted(Formatting.LIGHT_PURPLE))
-            .append(Text.literal(" to search presets and add them to the container.").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("Search tips:").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- Type normal text to search items.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- Type ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("#something").withStyle(ChatFormatting.LIGHT_PURPLE))
+            .append(Component.literal(" to search tags.").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- Type ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("&name").withStyle(ChatFormatting.LIGHT_PURPLE))
+            .append(Component.literal(" to search presets and add them to the container.").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("Presets (local vs global editing):").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- Add presets to a container via ").formatted(Formatting.GRAY)
-            .append(Text.literal("&search").formatted(Formatting.LIGHT_PURPLE))
-            .append(Text.literal("; applied presets then appear on the left list.").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- Click a preset on the left to edit it locally for this container.").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal("- If local edits are unsaved, the preset name shows an ").formatted(Formatting.GRAY)
-            .append(Text.literal("*").formatted(Formatting.YELLOW))
-            .append(Text.literal(".").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- Toggle \"Edit preset\" to edit the global preset (affects all containers).").formatted(Formatting.GRAY), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("Presets (local vs global editing):").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- Add presets to a container via ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("&search").withStyle(ChatFormatting.LIGHT_PURPLE))
+            .append(Component.literal("; applied presets then appear on the left list.").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- Click a preset on the left to edit it locally for this container.").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal("- If local edits are unsaved, the preset name shows an ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("*").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(".").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- Toggle \"Edit preset\" to edit the global preset (affects all containers).").withStyle(ChatFormatting.GRAY), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("Import / export presets:").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- Export creates a ").formatted(Formatting.GRAY)
-            .append(Text.literal("cs2|").formatted(Formatting.YELLOW))
-            .append(Text.literal(" string you can share.").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- Import takes a ").formatted(Formatting.GRAY)
-            .append(Text.literal("cs2|").formatted(Formatting.YELLOW))
-            .append(Text.literal(" string and creates a new preset.").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal(""), false);
+        source.sendSuccess(() -> Component.literal("Import / export presets:").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- Export creates a ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("cs2|").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" string you can share.").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- Import takes a ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("cs2|").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(" string and creates a new preset.").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal(""), false);
 
-        source.sendFeedback(() -> Text.literal("Commands:").formatted(Formatting.AQUA), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs scan").formatted(Formatting.GREEN))
-            .append(Text.literal("  (rescans loaded containers for ").formatted(Formatting.GRAY))
-            .append(Text.literal("/cs find").formatted(Formatting.GREEN))
-            .append(Text.literal(")").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs find <item>").formatted(Formatting.GREEN))
-            .append(Text.literal("  (lists containers that contain an item)").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets add <name>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets duplicate <name>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets remove <name>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets rename <old> <new>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets edit <name>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets list").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets import").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets export <name>").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets exportSelect").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY).append(Text.literal("/cs presets exportAll").formatted(Formatting.GREEN)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs autosort ").formatted(Formatting.GREEN))
-            .append(Text.literal("<never|selected|always>").formatted(Formatting.YELLOW)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs highlights ").formatted(Formatting.GREEN))
-            .append(Text.literal("<on|off|until_opened>").formatted(Formatting.YELLOW)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs highlights dismiss").formatted(Formatting.GREEN))
-            .append(Text.literal("  (clears current highlights)").formatted(Formatting.GRAY)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs blacklist ").formatted(Formatting.GREEN))
-            .append(Text.literal("<list|add|remove|clear>").formatted(Formatting.YELLOW)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs blacklist addPreset ").formatted(Formatting.GREEN))
-            .append(Text.literal("<name> ").formatted(Formatting.YELLOW))
-            .append(Text.literal("<blacklist|whitelist|everything>").formatted(Formatting.YELLOW)), false);
-        source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-            .append(Text.literal("/cs blacklist mode ").formatted(Formatting.GREEN))
-            .append(Text.literal("<preventSort|strictPreventSort|preventEntry|strictPreventEntry>").formatted(Formatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("Commands:").withStyle(ChatFormatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs scan").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("  (rescans loaded containers for ").withStyle(ChatFormatting.GRAY))
+            .append(Component.literal("/cs find").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal(")").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs find <item>").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("  (lists containers that contain an item)").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets add <name>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets duplicate <name>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets remove <name>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets rename <old> <new>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets edit <name>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets list").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets import").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets export <name>").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets exportSelect").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY).append(Component.literal("/cs presets exportAll").withStyle(ChatFormatting.GREEN)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs autosort ").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("<never|selected|always>").withStyle(ChatFormatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs highlights ").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("<on|off|until_opened>").withStyle(ChatFormatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs highlights dismiss").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("  (clears current highlights)").withStyle(ChatFormatting.GRAY)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs blacklist ").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("<list|add|remove|clear>").withStyle(ChatFormatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs blacklist addPreset ").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("<name> ").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal("<blacklist|whitelist|everything>").withStyle(ChatFormatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+            .append(Component.literal("/cs blacklist mode ").withStyle(ChatFormatting.GREEN))
+            .append(Component.literal("<preventSort|strictPreventSort|preventEntry|strictPreventEntry>").withStyle(ChatFormatting.YELLOW)), false);
         return 1;
     }
 
-    private static int autosortMode(ServerCommandSource source, String mode) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int autosortMode(CommandSourceStack source, String mode) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs autosort must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs autosort must be run by a player"));
             return 0;
         }
 
         String m = mode == null ? "" : mode.trim().toLowerCase();
         if (!ChestSortState.AUTOSORT_NEVER.equals(m) && !ChestSortState.AUTOSORT_SELECTED.equals(m) && !ChestSortState.AUTOSORT_ALWAYS.equals(m)) {
-            source.sendError(Text.literal("[CS] Invalid autosort mode. Use: never | selected | always"));
+            source.sendFailure(Component.literal("[CS] Invalid autosort mode. Use: never | selected | always"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        state.setAutosortMode(player.getUuidAsString(), m);
-        source.sendFeedback(() -> Text.literal("[CS] Autosort mode set to: " + m), false);
+        state.setAutosortMode(player.getStringUUID(), m);
+        source.sendSuccess(() -> Component.literal("[CS] Autosort mode set to: " + m), false);
         return 1;
     }
 
-    private static int highlightsMode(ServerCommandSource source, String mode) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int highlightsMode(CommandSourceStack source, String mode) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs highlights must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs highlights must be run by a player"));
             return 0;
         }
 
         String m = mode == null ? "" : mode.trim().toLowerCase();
         if (!ChestSortState.HIGHLIGHTS_ON.equals(m) && !ChestSortState.HIGHLIGHTS_OFF.equals(m) && !ChestSortState.HIGHLIGHTS_UNTIL_OPENED.equals(m)) {
-            source.sendError(Text.literal("[CS] Invalid highlights mode. Use: on | off | until_opened"));
+            source.sendFailure(Component.literal("[CS] Invalid highlights mode. Use: on | off | until_opened"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         state.setHighlightsMode(uuid, m);
 
-        String currentDim = player.getEntityWorld().getRegistryKey().getValue().toString();
+        String currentDim = player.level().dimension().identifier().toString();
         String lastItem = state.getLastFindItem(uuid);
         if (lastItem == null) lastItem = "";
 
@@ -717,12 +717,12 @@ public final class ChestSortCommands {
 
             // If a container is currently open, update slot highlight immediately.
             boolean highlightContainer = false;
-            if (!lastItem.isEmpty() && player.currentScreenHandler instanceof net.minecraft.screen.GenericContainerScreenHandler handler) {
-                net.minecraft.inventory.Inventory inv = handler.getInventory();
-                for (int i = 0; i < inv.size(); i++) {
-                    net.minecraft.item.ItemStack st = inv.getStack(i);
+            if (!lastItem.isEmpty() && player.containerMenu instanceof net.minecraft.world.inventory.ChestMenu handler) {
+                net.minecraft.world.Container inv = handler.getContainer();
+                for (int i = 0; i < inv.getContainerSize(); i++) {
+                    net.minecraft.world.item.ItemStack st = inv.getItem(i);
                     if (st == null || st.isEmpty()) continue;
-                    String id = String.valueOf(net.minecraft.registry.Registries.ITEM.getId(st.getItem()));
+                    String id = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(st.getItem()).toString();
                     if (lastItem.equals(id)) {
                         highlightContainer = true;
                         break;
@@ -738,96 +738,96 @@ public final class ChestSortCommands {
             }
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Highlights mode set to: " + m), false);
+        source.sendSuccess(() -> Component.literal("[CS] Highlights mode set to: " + m), false);
         return 1;
     }
 
-    private static int highlightsDismiss(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int highlightsDismiss(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs highlights dismiss must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs highlights dismiss must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         state.setLastFindItem(uuid, "");
         state.clearHighlightsOnNextOpen(uuid);
 
-        String currentDim = player.getEntityWorld().getRegistryKey().getValue().toString();
+        String currentDim = player.level().dimension().identifier().toString();
         // Clear in-world outlines and in-container slot/text overlay.
         ServerPlayNetworking.send(player, new FindHighlightsPayload(currentDim, "", List.of()));
         ServerPlayNetworking.send(player, new dev.dromer.chestsort.net.payload.ContainerHighlightPayload("", false));
 
-        source.sendFeedback(() -> Text.literal("[CS] Highlights dismissed."), false);
+        source.sendSuccess(() -> Component.literal("[CS] Highlights dismissed."), false);
         return 1;
     }
 
-    private static int presetsAdd(ServerCommandSource source, String name) {
+    private static int presetsAdd(CommandSourceStack source, String name) {
         MinecraftServer server = source.getServer();
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs presets must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs presets must be run by a player"));
             return 0;
         }
 
         String n = name == null ? "" : name.trim();
         if (n.isEmpty()) {
-            source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+            source.sendFailure(Component.literal("[CS] Preset name cannot be empty"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(server);
         boolean ok = state.addPreset(n, new ContainerFilterSpec(List.of(), List.of(), List.of()));
         if (!ok) {
-            source.sendError(Text.literal("[CS] Preset already exists (or invalid name): " + n));
+            source.sendFailure(Component.literal("[CS] Preset already exists (or invalid name): " + n));
             return 0;
         }
 
         dev.dromer.chestsort.net.ChestSortNetworking.broadcastPresets(server);
         dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
         ServerPlayNetworking.send(player, new OpenPresetUiPayload(OpenPresetUiPayload.MODE_EDIT, n));
-        source.sendFeedback(() -> Text.literal("[CS] Added preset: " + n), false);
+        source.sendSuccess(() -> Component.literal("[CS] Added preset: " + n), false);
         return 1;
     }
 
-    private static int presetsRemove(ServerCommandSource source, String name) {
+    private static int presetsRemove(CommandSourceStack source, String name) {
         MinecraftServer server = source.getServer();
         String n = name == null ? "" : name.trim();
         if (n.isEmpty()) {
-            source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+            source.sendFailure(Component.literal("[CS] Preset name cannot be empty"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(server);
         boolean removed = state.removePreset(n);
         if (!removed) {
-            source.sendError(Text.literal("[CS] Preset not found: " + n));
+            source.sendFailure(Component.literal("[CS] Preset not found: " + n));
             return 0;
         }
 
         dev.dromer.chestsort.net.ChestSortNetworking.broadcastPresets(server);
-        source.sendFeedback(() -> Text.literal("[CS] Removed preset: " + n), false);
+        source.sendSuccess(() -> Component.literal("[CS] Removed preset: " + n), false);
         return 1;
     }
 
-    private static int presetsDuplicate(ServerCommandSource source, String name) {
+    private static int presetsDuplicate(CommandSourceStack source, String name) {
         MinecraftServer server = source.getServer();
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs presets must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs presets must be run by a player"));
             return 0;
         }
 
         String n = name == null ? "" : name.trim();
         if (n.isEmpty()) {
-            source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+            source.sendFailure(Component.literal("[CS] Preset name cannot be empty"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(server);
         if (!state.hasPreset(n)) {
-            source.sendError(Text.literal("[CS] Preset not found: " + n));
+            source.sendFailure(Component.literal("[CS] Preset not found: " + n));
             return 0;
         }
 
@@ -855,30 +855,30 @@ public final class ChestSortCommands {
         dev.dromer.chestsort.net.ChestSortNetworking.broadcastPresets(server);
         dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
         final String outName = out;
-        source.sendFeedback(() -> Text.literal("[CS] Duplicated preset: " + n + " -> " + outName), false);
+        source.sendSuccess(() -> Component.literal("[CS] Duplicated preset: " + n + " -> " + outName), false);
         return 1;
     }
 
-    private static int presetsRename(ServerCommandSource source, String oldName, String newName) {
+    private static int presetsRename(CommandSourceStack source, String oldName, String newName) {
         MinecraftServer server = source.getServer();
         String o = oldName == null ? "" : oldName.trim();
         String n = newName == null ? "" : newName.trim();
         if (o.isEmpty() || n.isEmpty()) {
-            source.sendError(Text.literal("[CS] Preset names cannot be empty"));
+            source.sendFailure(Component.literal("[CS] Preset names cannot be empty"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(server);
         boolean ok = state.renamePreset(o, n);
         if (!ok) {
-            source.sendError(Text.literal("[CS] Rename failed (missing old name or new name already exists)"));
+            source.sendFailure(Component.literal("[CS] Rename failed (missing old name or new name already exists)"));
             return 0;
         }
 
         dev.dromer.chestsort.net.ChestSortNetworking.broadcastPresets(server);
-        source.sendFeedback(() -> Text.literal("[CS] Renamed preset: " + o + " -> " + n), false);
+        source.sendSuccess(() -> Component.literal("[CS] Renamed preset: " + o + " -> " + n), false);
 
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player != null) {
             dev.dromer.chestsort.net.ChestSortNetworking.sendPresetsTo(player);
             ServerPlayNetworking.send(player, new OpenPresetUiPayload(OpenPresetUiPayload.MODE_EDIT, n));
@@ -886,23 +886,23 @@ public final class ChestSortCommands {
         return 1;
     }
 
-    private static int presetsEdit(ServerCommandSource source, String name) {
+    private static int presetsEdit(CommandSourceStack source, String name) {
         MinecraftServer server = source.getServer();
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs presets must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs presets must be run by a player"));
             return 0;
         }
 
         String n = name == null ? "" : name.trim();
         if (n.isEmpty()) {
-            source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+            source.sendFailure(Component.literal("[CS] Preset name cannot be empty"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(server);
         if (!state.hasPreset(n)) {
-            source.sendError(Text.literal("[CS] Preset not found: " + n));
+            source.sendFailure(Component.literal("[CS] Preset not found: " + n));
             return 0;
         }
 
@@ -911,7 +911,7 @@ public final class ChestSortCommands {
         return 1;
     }
 
-    private static int presetsList(ServerCommandSource source) {
+    private static int presetsList(CommandSourceStack source) {
         MinecraftServer server = source.getServer();
         ChestSortState state = ChestSortState.get(server);
 
@@ -920,32 +920,32 @@ public final class ChestSortCommands {
 
         int total = names.size();
         if (total == 0) {
-            source.sendFeedback(() -> Text.literal("[CS] No presets."), false);
+            source.sendSuccess(() -> Component.literal("[CS] No presets."), false);
             return 0;
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Presets (" + total + "):").formatted(Formatting.AQUA), false);
+        source.sendSuccess(() -> Component.literal("[CS] Presets (" + total + "):").withStyle(ChatFormatting.AQUA), false);
 
         int limit = 200;
         for (int i = 0; i < names.size() && i < limit; i++) {
             String n = names.get(i);
             if (n == null || n.isEmpty()) continue;
-            source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-                .append(Text.literal(n).formatted(Formatting.YELLOW)), false);
+            source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(n).withStyle(ChatFormatting.YELLOW)), false);
         }
 
         if (total > limit) {
             int more = total - limit;
-            source.sendFeedback(() -> Text.literal("... and " + more + " more").formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("... and " + more + " more").withStyle(ChatFormatting.GRAY), false);
         }
 
         return total;
     }
 
-    private static int presetsOpenUi(ServerCommandSource source, byte mode, String name) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int presetsOpenUi(CommandSourceStack source, byte mode, String name) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs presets must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs presets must be run by a player"));
             return 0;
         }
 
@@ -954,11 +954,11 @@ public final class ChestSortCommands {
             ChestSortState state = ChestSortState.get(server);
             String n = name == null ? "" : name.trim();
             if (n.isEmpty()) {
-                source.sendError(Text.literal("[CS] Preset name cannot be empty"));
+                source.sendFailure(Component.literal("[CS] Preset name cannot be empty"));
                 return 0;
             }
             if (!state.hasPreset(n)) {
-                source.sendError(Text.literal("[CS] Preset not found: " + n));
+                source.sendFailure(Component.literal("[CS] Preset not found: " + n));
                 return 0;
             }
 
@@ -980,7 +980,7 @@ public final class ChestSortCommands {
         return 1;
     }
 
-    private static int scan(ServerCommandSource source) {
+    private static int scan(CommandSourceStack source) {
         MinecraftServer server = source.getServer();
         ChestSortState state = ChestSortState.get(server);
 
@@ -988,42 +988,42 @@ public final class ChestSortCommands {
         long nowMs = System.currentTimeMillis();
         state.setLastFullScanMs(nowMs);
 
-        source.sendFeedback(() -> Text.literal("[CS] Scanned " + scanned + " containers at " + Instant.ofEpochMilli(nowMs)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Scanned " + scanned + " containers at " + Instant.ofEpochMilli(nowMs)), false);
         return scanned;
     }
 
-    private static int find(ServerCommandSource source, Item item) {
+    private static int find(CommandSourceStack source, Item item) {
         MinecraftServer server = source.getServer();
-        ServerPlayerEntity player = source.getPlayer();
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs find must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs find must be run by a player"));
             return 0;
         }
 
-        Identifier itemId = Registries.ITEM.getId(item);
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
         ChestSortState state = ChestSortState.get(server);
-        state.setLastFindItem(player.getUuidAsString(), itemId.toString());
+        state.setLastFindItem(player.getStringUUID(), itemId.toString());
 
-        String highlightsMode = state.getHighlightsMode(player.getUuidAsString());
+        String highlightsMode = state.getHighlightsMode(player.getStringUUID());
         boolean highlightsOff = ChestSortState.HIGHLIGHTS_OFF.equals(highlightsMode);
         boolean untilOpened = ChestSortState.HIGHLIGHTS_UNTIL_OPENED.equals(highlightsMode);
 
         List<ContainerSnapshot.Match> matches = state.find(itemId.toString());
         if (matches.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("[CS] No containers found containing: " + itemId), false);
+            source.sendSuccess(() -> Component.literal("[CS] No containers found containing: " + itemId), false);
             // Clear any previous in-world highlights.
-            ServerPlayNetworking.send(player, new FindHighlightsPayload(player.getEntityWorld().getRegistryKey().getValue().toString(), itemId.toString(), List.of()));
+            ServerPlayNetworking.send(player, new FindHighlightsPayload(player.level().dimension().identifier().toString(), itemId.toString(), List.of()));
             if (highlightsOff) {
-                source.sendFeedback(() -> Text.literal("[CS] Highlights are OFF. Use /cs highlights on to enable.").formatted(Formatting.GRAY), false);
+                source.sendSuccess(() -> Component.literal("[CS] Highlights are OFF. Use /cs highlights on to enable.").withStyle(ChatFormatting.GRAY), false);
             }
             return 0;
         }
 
-        String currentDim = player.getEntityWorld().getRegistryKey().getValue().toString();
+        String currentDim = player.level().dimension().identifier().toString();
         if (highlightsOff) {
             // Ensure old outlines are removed and inform the player.
             ServerPlayNetworking.send(player, new FindHighlightsPayload(currentDim, itemId.toString(), List.of()));
-            source.sendFeedback(() -> Text.literal("[CS] Highlights are OFF. Use /cs highlights on to enable.").formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("[CS] Highlights are OFF. Use /cs highlights on to enable.").withStyle(ChatFormatting.GRAY), false);
         } else {
             // Send in-world highlights for the player's current dimension only.
             java.util.ArrayList<Long> highlightPos = new java.util.ArrayList<>();
@@ -1037,131 +1037,131 @@ public final class ChestSortCommands {
             ServerPlayNetworking.send(player, new FindHighlightsPayload(currentDim, itemId.toString(), highlightPos));
 
             if (untilOpened) {
-                state.armClearHighlightsOnNextOpen(player.getUuidAsString());
+                state.armClearHighlightsOnNextOpen(player.getStringUUID());
             } else {
-                state.clearHighlightsOnNextOpen(player.getUuidAsString());
+                state.clearHighlightsOnNextOpen(player.getStringUUID());
             }
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Found " + matches.size() + " container(s) containing: " + itemId), false);
+        source.sendSuccess(() -> Component.literal("[CS] Found " + matches.size() + " container(s) containing: " + itemId), false);
         for (ContainerSnapshot.Match match : matches) {
-            source.sendFeedback(() -> Text.literal("- " + match.dimensionId() + " " + match.pos().toShortString() + " x" + match.count()), false);
+            source.sendSuccess(() -> Component.literal("- " + match.dimensionId() + " " + match.pos().toShortString() + " x" + match.count()), false);
         }
 
         return matches.size();
     }
 
-    private static int blacklistAdd(ServerCommandSource source, Item item) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistAdd(CommandSourceStack source, Item item) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist add must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist add must be run by a player"));
             return 0;
         }
         if (item == null) {
-            source.sendError(Text.literal("[CS] Missing item"));
+            source.sendFailure(Component.literal("[CS] Missing item"));
             return 0;
         }
 
-        String itemId = String.valueOf(Registries.ITEM.getId(item));
+        String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
         ChestSortState state = ChestSortState.get(source.getServer());
-        boolean changed = state.addItemToBlacklist(player.getUuidAsString(), itemId);
+        boolean changed = state.addItemToBlacklist(player.getStringUUID(), itemId);
         if (changed) {
-            source.sendFeedback(() -> Text.literal("[CS] Blacklisted: ").formatted(Formatting.GOLD)
-                .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+            source.sendSuccess(() -> Component.literal("[CS] Blacklisted: ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(itemId).withStyle(ChatFormatting.YELLOW)), false);
             return 1;
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Already blacklisted: ").formatted(Formatting.GOLD)
-            .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Already blacklisted: ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(itemId).withStyle(ChatFormatting.YELLOW)), false);
         return 0;
     }
 
-    private static int blacklistRemove(ServerCommandSource source, Item item) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistRemove(CommandSourceStack source, Item item) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist remove must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist remove must be run by a player"));
             return 0;
         }
         if (item == null) {
-            source.sendError(Text.literal("[CS] Missing item"));
+            source.sendFailure(Component.literal("[CS] Missing item"));
             return 0;
         }
 
-        String itemId = String.valueOf(Registries.ITEM.getId(item));
+        String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
         ChestSortState state = ChestSortState.get(source.getServer());
-        boolean changed = state.removeItemFromBlacklist(player.getUuidAsString(), itemId);
+        boolean changed = state.removeItemFromBlacklist(player.getStringUUID(), itemId);
         if (changed) {
-            source.sendFeedback(() -> Text.literal("[CS] Un-blacklisted: ").formatted(Formatting.GOLD)
-                .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+            source.sendSuccess(() -> Component.literal("[CS] Un-blacklisted: ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(itemId).withStyle(ChatFormatting.YELLOW)), false);
             return 1;
         }
 
-        source.sendFeedback(() -> Text.literal("[CS] Not blacklisted: ").formatted(Formatting.GOLD)
-            .append(Text.literal(itemId).formatted(Formatting.YELLOW)), false);
+        source.sendSuccess(() -> Component.literal("[CS] Not blacklisted: ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(itemId).withStyle(ChatFormatting.YELLOW)), false);
         return 0;
     }
 
-    private static int blacklistList(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistList(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist list must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist list must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        java.util.ArrayList<String> items = new java.util.ArrayList<>(state.getItemBlacklist(player.getUuidAsString()));
+        java.util.ArrayList<String> items = new java.util.ArrayList<>(state.getItemBlacklist(player.getStringUUID()));
         items.sort(java.util.Comparator.naturalOrder());
 
-        source.sendFeedback(() -> Text.literal("[CS] ").formatted(Formatting.GOLD)
-            .append(Text.literal("Blacklisted items: ").formatted(Formatting.YELLOW))
-            .append(Text.literal(String.valueOf(items.size())).formatted(Formatting.AQUA)), false);
+        source.sendSuccess(() -> Component.literal("[CS] ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal("Blacklisted items: ").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(String.valueOf(items.size())).withStyle(ChatFormatting.AQUA)), false);
 
         if (items.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("- (none)").formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("- (none)").withStyle(ChatFormatting.GRAY), false);
             return 1;
         }
 
         int shown = 0;
         for (String itemId : items) {
             if (itemId == null || itemId.isEmpty()) continue;
-            source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-                .append(Text.literal(itemId).formatted(Formatting.WHITE)), false);
+            source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(itemId).withStyle(ChatFormatting.WHITE)), false);
             shown++;
             if (shown >= 200) break;
         }
         return shown;
     }
 
-    private static int blacklistClear(ServerCommandSource source) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistClear(CommandSourceStack source) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist clear must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist clear must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
-        int removed = state.clearItemBlacklist(player.getUuidAsString());
-        source.sendFeedback(() -> Text.literal("[CS] Cleared blacklist: ").formatted(Formatting.GOLD)
-            .append(Text.literal(String.valueOf(removed)).formatted(Formatting.AQUA)), false);
+        int removed = state.clearItemBlacklist(player.getStringUUID());
+        source.sendSuccess(() -> Component.literal("[CS] Cleared blacklist: ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(String.valueOf(removed)).withStyle(ChatFormatting.AQUA)), false);
         return removed;
     }
 
-    private static int blacklistMode(ServerCommandSource source, String modeRaw) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistMode(CommandSourceStack source, String modeRaw) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist mode must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist mode must be run by a player"));
             return 0;
         }
 
         ChestSortState state = ChestSortState.get(source.getServer());
         if (modeRaw == null || modeRaw.trim().isEmpty()) {
-            String current = state.getBlacklistMode(player.getUuidAsString());
-            source.sendFeedback(() -> Text.literal("[CS] Blacklist mode is: ").formatted(Formatting.GOLD)
-                .append(Text.literal(current).formatted(Formatting.YELLOW)), false);
+            String current = state.getBlacklistMode(player.getStringUUID());
+            source.sendSuccess(() -> Component.literal("[CS] Blacklist mode is: ").withStyle(ChatFormatting.GOLD)
+                .append(Component.literal(current).withStyle(ChatFormatting.YELLOW)), false);
             return 1;
         }
 
-        String m = modeRaw == null ? "" : modeRaw.trim().toLowerCase(Locale.ROOT);
+        String m = modeRaw.trim().toLowerCase(Locale.ROOT);
         // Allow friendlier camelCase inputs.
         m = m.replace("_", "");
 
@@ -1169,27 +1169,27 @@ public final class ChestSortCommands {
             && !ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_SORT.equals(m)
             && !ChestSortState.BLACKLIST_MODE_PREVENT_ENTRY.equals(m)
             && !ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(m)) {
-            source.sendError(Text.literal("[CS] Invalid blacklist mode. Use: preventSort | strictPreventSort | preventEntry | strictPreventEntry"));
+            source.sendFailure(Component.literal("[CS] Invalid blacklist mode. Use: preventSort | strictPreventSort | preventEntry | strictPreventEntry"));
             return 0;
         }
 
         final String mFinal = m;
-        state.setBlacklistMode(player.getUuidAsString(), mFinal);
-        source.sendFeedback(() -> Text.literal("[CS] Blacklist mode set to: ").formatted(Formatting.GOLD)
-            .append(Text.literal(mFinal).formatted(Formatting.YELLOW)), false);
+        state.setBlacklistMode(player.getStringUUID(), mFinal);
+        source.sendSuccess(() -> Component.literal("[CS] Blacklist mode set to: ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(mFinal).withStyle(ChatFormatting.YELLOW)), false);
         return 1;
     }
 
-    private static int blacklistAddPreset(ServerCommandSource source, String presetName, String modeRaw) {
-        ServerPlayerEntity player = source.getPlayer();
+    private static int blacklistAddPreset(CommandSourceStack source, String presetName, String modeRaw) {
+        ServerPlayer player = source.getPlayer();
         if (player == null) {
-            source.sendError(Text.literal("[CS] /cs blacklist addPreset must be run by a player"));
+            source.sendFailure(Component.literal("[CS] /cs blacklist addPreset must be run by a player"));
             return 0;
         }
 
         String name = presetName == null ? "" : presetName.trim();
         if (name.isEmpty()) {
-            source.sendError(Text.literal("[CS] Missing preset name"));
+            source.sendFailure(Component.literal("[CS] Missing preset name"));
             return 0;
         }
 
@@ -1202,7 +1202,7 @@ public final class ChestSortCommands {
         ChestSortState state = ChestSortState.get(source.getServer());
         ContainerFilterSpec preset = state.getPreset(name);
         if (preset == null) {
-            source.sendError(Text.literal("[CS] Preset not found: " + name));
+            source.sendFailure(Component.literal("[CS] Preset not found: " + name));
             return 0;
         }
 
@@ -1218,23 +1218,23 @@ public final class ChestSortCommands {
             }
             case "everything" -> selected = state.resolveWithAppliedPresets(base);
             default -> {
-                source.sendError(Text.literal("[CS] Invalid mode: " + mode + " (use: blacklist|whitelist|everything)"));
+                source.sendFailure(Component.literal("[CS] Invalid mode: " + mode + " (use: blacklist|whitelist|everything)"));
                 return 0;
             }
         }
 
         LinkedHashSet<String> itemIds = chestsort$collectItemIdsFromSpec(selected);
         if (itemIds.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("[CS] Preset \"" + nameFinal + "\" (" + modeFinal + ") contains no items to add."), false);
+            source.sendSuccess(() -> Component.literal("[CS] Preset \"" + nameFinal + "\" (" + modeFinal + ") contains no items to add."), false);
             return 1;
         }
 
-        int added = state.addItemsToBlacklist(player.getUuidAsString(), itemIds);
-        source.sendFeedback(() -> Text.literal("[CS] Added ").formatted(Formatting.GOLD)
-            .append(Text.literal(String.valueOf(added)).formatted(Formatting.AQUA))
-            .append(Text.literal(" item(s) from preset \"").formatted(Formatting.GOLD))
-            .append(Text.literal(nameFinal).formatted(Formatting.YELLOW))
-            .append(Text.literal("\" (" + modeFinal + ") to your blacklist.").formatted(Formatting.GOLD)), false);
+        int added = state.addItemsToBlacklist(player.getStringUUID(), itemIds);
+        source.sendSuccess(() -> Component.literal("[CS] Added ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal(String.valueOf(added)).withStyle(ChatFormatting.AQUA))
+            .append(Component.literal(" item(s) from preset \"").withStyle(ChatFormatting.GOLD))
+            .append(Component.literal(nameFinal).withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal("\" (" + modeFinal + ") to your blacklist.").withStyle(ChatFormatting.GOLD)), false);
         return Math.max(1, added);
     }
 
@@ -1258,10 +1258,10 @@ public final class ChestSortCommands {
                 if (tagId == null) continue;
 
                 HashSet<String> exc = chestsort$expandExceptionsToItemIds(tf.exceptions());
-                TagKey<Item> tagKey = TagKey.of(RegistryKeys.ITEM, tagId);
-                for (var entry : Registries.ITEM.iterateEntries(tagKey)) {
+                TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagId);
+                for (var entry : BuiltInRegistries.ITEM.getTagOrEmpty(tagKey)) {
                     if (entry == null || entry.value() == null) continue;
-                    String itemId = String.valueOf(Registries.ITEM.getId(entry.value()));
+                    String itemId = BuiltInRegistries.ITEM.getKey(entry.value()).toString();
                     if (itemId == null || itemId.isEmpty()) continue;
                     if (exc.contains(itemId)) continue;
                     out.add(itemId);
@@ -1284,10 +1284,10 @@ public final class ChestSortCommands {
             if (t.startsWith("#")) {
                 Identifier tagId = chestsort$parseTagIdentifier(t);
                 if (tagId == null) continue;
-                TagKey<Item> tagKey = TagKey.of(RegistryKeys.ITEM, tagId);
-                for (var entry : Registries.ITEM.iterateEntries(tagKey)) {
+                TagKey<Item> tagKey = TagKey.create(Registries.ITEM, tagId);
+                for (var entry : BuiltInRegistries.ITEM.getTagOrEmpty(tagKey)) {
                     if (entry == null || entry.value() == null) continue;
-                    String itemId = String.valueOf(Registries.ITEM.getId(entry.value()));
+                    String itemId = BuiltInRegistries.ITEM.getKey(entry.value()).toString();
                     if (itemId == null || itemId.isEmpty()) continue;
                     out.add(itemId);
                 }
@@ -1327,44 +1327,44 @@ public final class ChestSortCommands {
         return null;
     }
 
-    private static int tags(ServerCommandSource source, Item item) {
+    private static int tags(CommandSourceStack source, Item item) {
         if (item == null) {
-            source.sendError(Text.literal("[CS] Missing item"));
+            source.sendFailure(Component.literal("[CS] Missing item"));
             return 0;
         }
 
-        Identifier itemId = Registries.ITEM.getId(item);
+        Identifier itemId = BuiltInRegistries.ITEM.getKey(item);
         java.util.ArrayList<String> tags = new java.util.ArrayList<>();
 
         try {
             // Modern registry API: items expose their tag memberships via their registry entry.
-            for (TagKey<Item> tag : item.getRegistryEntry().streamTags().toList()) {
-                if (tag == null || tag.id() == null) continue;
-                tags.add("#" + tag.id());
+            for (TagKey<Item> tag : item.builtInRegistryHolder().tags().toList()) {
+                if (tag == null || tag.location() == null) continue;
+                tags.add("#" + tag.location());
             }
         } catch (Throwable t) {
             // Fallback for mappings/versions where streamTags() may not be available.
             // (We keep this graceful rather than hard-crashing the command.)
-            source.sendError(Text.literal("[CS] Failed to read tags for: " + itemId));
+            source.sendFailure(Component.literal("[CS] Failed to read tags for: " + itemId));
             return 0;
         }
 
         java.util.Collections.sort(tags);
 
-        source.sendFeedback(() -> Text.literal("[CS] ").formatted(Formatting.GOLD)
-            .append(Text.literal("Tags for ").formatted(Formatting.YELLOW))
-            .append(Text.literal(itemId.toString()).formatted(Formatting.WHITE))
-            .append(Text.literal(": ").formatted(Formatting.YELLOW))
-            .append(Text.literal(String.valueOf(tags.size())).formatted(Formatting.AQUA)), false);
+        source.sendSuccess(() -> Component.literal("[CS] ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal("Tags for ").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(itemId.toString()).withStyle(ChatFormatting.WHITE))
+            .append(Component.literal(": ").withStyle(ChatFormatting.YELLOW))
+            .append(Component.literal(String.valueOf(tags.size())).withStyle(ChatFormatting.AQUA)), false);
 
         if (tags.isEmpty()) {
-            source.sendFeedback(() -> Text.literal("- (none)").formatted(Formatting.GRAY), false);
+            source.sendSuccess(() -> Component.literal("- (none)").withStyle(ChatFormatting.GRAY), false);
             return 1;
         }
 
         for (String tag : tags) {
-            source.sendFeedback(() -> Text.literal("- ").formatted(Formatting.GRAY)
-                .append(Text.literal(tag).formatted(Formatting.LIGHT_PURPLE)), false);
+            source.sendSuccess(() -> Component.literal("- ").withStyle(ChatFormatting.GRAY)
+                .append(Component.literal(tag).withStyle(ChatFormatting.LIGHT_PURPLE)), false);
         }
 
         return tags.size();

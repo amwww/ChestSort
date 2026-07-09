@@ -4,16 +4,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** Server -> client: current protected player inventory slot indices. */
-public record LockedSlotsSyncPayload(List<Integer> lockedSlots) implements CustomPayload {
-    public static final Id<LockedSlotsSyncPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "locked_slots_sync"));
+public record LockedSlotsSyncPayload(List<Integer> lockedSlots) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<LockedSlotsSyncPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "locked_slots_sync"));
 
-    public static final PacketCodec<RegistryByteBuf, LockedSlotsSyncPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, LockedSlotsSyncPayload> CODEC = StreamCodec.of(
         (buf, payload) -> {
             List<Integer> list = payload.lockedSlots == null ? List.of() : payload.lockedSlots;
             buf.writeVarInt(list.size());
@@ -32,7 +32,7 @@ public record LockedSlotsSyncPayload(List<Integer> lockedSlots) implements Custo
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }

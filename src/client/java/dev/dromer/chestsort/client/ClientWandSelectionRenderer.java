@@ -1,18 +1,10 @@
 package dev.dromer.chestsort.client;
 
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.RenderLayers;
-import net.minecraft.client.render.VertexConsumer;
-import net.minecraft.client.render.VertexConsumerProvider;
-import net.minecraft.client.render.VertexRendering;
-import net.minecraft.client.util.math.MatrixStack;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
-import net.minecraft.util.shape.VoxelShape;
-import net.minecraft.util.shape.VoxelShapes;
-import org.joml.Matrix4f;
+import net.minecraft.client.Minecraft;
+import net.minecraft.core.BlockPos;
+import net.minecraft.gizmos.GizmoStyle;
+import net.minecraft.gizmos.Gizmos;
+import net.minecraft.world.phys.AABB;
 
 public final class ClientWandSelectionRenderer {
     private ClientWandSelectionRenderer() {
@@ -24,11 +16,11 @@ public final class ClientWandSelectionRenderer {
     private static final float REGION_LINE_WIDTH = 2.0f;
     private static final float POS_LINE_WIDTH = 3.0f;
 
-    public static void render(Matrix4f positionMatrix, Camera camera) {
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || positionMatrix == null || camera == null) return;
+    public static void render() {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc == null || mc.level == null) return;
 
-        String dimId = mc.world.getRegistryKey().getValue().toString();
+        String dimId = mc.level.dimension().identifier().toString();
 
         boolean has1 = ClientWandSelectionState.hasPos1In(dimId);
         boolean has2 = ClientWandSelectionState.hasPos2In(dimId);
@@ -37,36 +29,12 @@ public final class ClientWandSelectionRenderer {
         BlockPos p1 = ClientWandSelectionState.pos1();
         BlockPos p2 = ClientWandSelectionState.pos2();
 
-        MatrixStack matrices = new MatrixStack();
-        matrices.multiplyPositionMatrix(positionMatrix);
-
-        Vec3d camPos = camera.getCameraPos();
-
-        VertexConsumerProvider.Immediate consumers = mc.getBufferBuilders().getEffectVertexConsumers();
-        VertexConsumer lines = consumers.getBuffer(RenderLayers.lines());
-
         if (has1 && p1 != null) {
-            VoxelShape shape = mc.world.getBlockState(p1).getOutlineShape(mc.world, p1);
-            if (shape != null && !shape.isEmpty()) {
-                VertexRendering.drawOutline(matrices, lines, shape,
-                    p1.getX() - camPos.x,
-                    p1.getY() - camPos.y,
-                    p1.getZ() - camPos.z,
-                    POS1_COLOR_ARGB,
-                    POS_LINE_WIDTH);
-            }
+            Gizmos.cuboid(p1, GizmoStyle.stroke(POS1_COLOR_ARGB, POS_LINE_WIDTH));
         }
 
         if (has2 && p2 != null) {
-            VoxelShape shape = mc.world.getBlockState(p2).getOutlineShape(mc.world, p2);
-            if (shape != null && !shape.isEmpty()) {
-                VertexRendering.drawOutline(matrices, lines, shape,
-                    p2.getX() - camPos.x,
-                    p2.getY() - camPos.y,
-                    p2.getZ() - camPos.z,
-                    POS2_COLOR_ARGB,
-                    POS_LINE_WIDTH);
-            }
+            Gizmos.cuboid(p2, GizmoStyle.stroke(POS2_COLOR_ARGB, POS_LINE_WIDTH));
         }
 
         if (has1 && has2 && p1 != null && p2 != null) {
@@ -77,24 +45,8 @@ public final class ClientWandSelectionRenderer {
             int maxY = Math.max(p1.getY(), p2.getY());
             int maxZ = Math.max(p1.getZ(), p2.getZ());
 
-            double sx = (double) (maxX - minX + 1);
-            double sy = (double) (maxY - minY + 1);
-            double sz = (double) (maxZ - minZ + 1);
-
-            VoxelShape box = VoxelShapes.cuboid(new Box(0, 0, 0, sx, sy, sz));
-
-            VertexRendering.drawOutline(
-                matrices,
-                lines,
-                box,
-                minX - camPos.x,
-                minY - camPos.y,
-                minZ - camPos.z,
-                REGION_COLOR_ARGB,
-                REGION_LINE_WIDTH
-            );
+            AABB box = new AABB(minX, minY, minZ, maxX + 1, maxY + 1, maxZ + 1);
+            Gizmos.cuboid(box, GizmoStyle.stroke(REGION_COLOR_ARGB, REGION_LINE_WIDTH));
         }
-
-        consumers.draw(RenderLayers.lines());
     }
 }

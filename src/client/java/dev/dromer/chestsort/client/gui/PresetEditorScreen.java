@@ -13,20 +13,20 @@ import dev.dromer.chestsort.client.ClientPresetRegistry;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.filter.TagFilterSpec;
 import dev.dromer.chestsort.net.payload.SetPresetV2Payload;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.font.TextRenderer;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.Screen;
-import net.minecraft.client.gui.widget.ButtonWidget;
-import net.minecraft.client.gui.widget.TextFieldWidget;
-import net.minecraft.client.input.KeyInput;
-import net.minecraft.item.Item;
-import net.minecraft.item.ItemStack;
-import net.minecraft.registry.Registries;
-import net.minecraft.registry.RegistryKeys;
-import net.minecraft.registry.tag.TagKey;
-import net.minecraft.text.Text;
-import net.minecraft.util.Identifier;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.Font;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.components.*;
+import net.minecraft.core.Holder;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.world.item.Item;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.tags.TagKey;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.Items;
+import org.jspecify.annotations.NonNull;
 
 public final class PresetEditorScreen extends Screen {
     private static final int PANEL_W = 180;
@@ -45,20 +45,23 @@ public final class PresetEditorScreen extends Screen {
 
     private ArrayList<String> editingItems = new ArrayList<>();
     private ArrayList<TagFilterSpec> editingTags = new ArrayList<>();
+    private ArrayList<String> editingPresets = new ArrayList<>();
 
     private ArrayList<String> chestsort$whitelistItems = new ArrayList<>();
     private ArrayList<TagFilterSpec> chestsort$whitelistTags = new ArrayList<>();
+    private ArrayList<String> chestsort$whitelistPresets = new ArrayList<>();
     private ArrayList<String> chestsort$blacklistItems = new ArrayList<>();
     private ArrayList<TagFilterSpec> chestsort$blacklistTags = new ArrayList<>();
+    private ArrayList<String> chestsort$blacklistPresets = new ArrayList<>();
 
     private boolean tagBrowserMode = false;
     private String tagBrowserTagId = "";
     private List<Item> tagBrowserItems = List.of();
     private final Map<String, List<Item>> tagItemsCache = new HashMap<>();
 
-    private TextFieldWidget searchField;
-    private ButtonWidget doneButton;
-    private ButtonWidget cancelButton;
+    private EditBox searchField;
+    private Button doneButton;
+    private Button cancelButton;
 
     private ArrayList<Item> allItems;
 
@@ -69,6 +72,7 @@ public final class PresetEditorScreen extends Screen {
 
     private List<Item> resultItems = List.of();
     private List<String> resultTagIds = List.of();
+    private List<String> resultPresetNames = List.of();
     private List<String> resultSubtitles = List.of();
     private int resultsScroll = 0;
 
@@ -80,8 +84,8 @@ public final class PresetEditorScreen extends Screen {
     }
 
     private int getLeftTotalRows() {
-        // items header + items + tags header + tags
-        return 2 + this.editingItems.size() + this.editingTags.size();
+        // items header + items + tags header + tags + presets header + presets
+        return 3 + this.editingItems.size() + this.editingTags.size() + this.editingPresets.size();
     }
 
     private int getLeftRowsShown() {
@@ -110,7 +114,7 @@ public final class PresetEditorScreen extends Screen {
     }
 
     public PresetEditorScreen(String presetName) {
-        super(Text.literal("Edit preset"));
+        super(Component.literal("Edit preset"));
         this.presetName = presetName == null ? "" : presetName.trim();
     }
 
@@ -126,21 +130,22 @@ public final class PresetEditorScreen extends Screen {
         int rightX = leftX + panelW + PANEL_GAP;
         int topY = Math.max(10, (this.height - PANEL_H) / 2);
 
-        this.searchField = new TextFieldWidget(this.textRenderer, rightX + 6, topY + 4, panelW - 12, 16, Text.literal("Search"));
+        this.searchField = new EditBox(this.font, rightX + 6, topY + 4, panelW - 12, 16, Component.literal("Search"));
         this.searchField.setMaxLength(256);
-        this.searchField.setChangedListener(s -> updateSearchResults());
-        this.addDrawableChild(this.searchField);
+        this.searchField.setResponder(s -> updateSearchResults());
+        this.addRenderableWidget(this.searchField);
 
-        this.doneButton = ButtonWidget.builder(Text.literal("Done"), b -> {
+
+        this.doneButton = Button.builder(Component.literal("Done"), b -> {
             saveToServer();
-            MinecraftClient.getInstance().setScreen(null);
-        }).dimensions(rightX + 6, topY + 24, (panelW - 18) / 2, 20).build();
-        this.addDrawableChild(this.doneButton);
+            Minecraft.getInstance().gui.setScreen(null);
+        }).bounds(rightX + 6, topY + 24, (panelW - 18) / 2, 20).build();
+        this.addRenderableWidget(this.doneButton);
 
-        this.cancelButton = ButtonWidget.builder(Text.literal("Cancel"), b -> MinecraftClient.getInstance().setScreen(null))
-            .dimensions(rightX + 12 + (panelW - 18) / 2, topY + 24, (panelW - 18) / 2, 20)
+        this.cancelButton = Button.builder(Component.literal("Cancel"), b -> Minecraft.getInstance().gui.setScreen(null))
+            .bounds(rightX + 12 + (panelW - 18) / 2, topY + 24, (panelW - 18) / 2, 20)
             .build();
-        this.addDrawableChild(this.cancelButton);
+        this.addRenderableWidget(this.cancelButton);
 
         updateSearchResults();
     }
@@ -149,8 +154,10 @@ public final class PresetEditorScreen extends Screen {
         if (this.presetName.isEmpty()) {
             this.chestsort$whitelistItems = new ArrayList<>();
             this.chestsort$whitelistTags = new ArrayList<>();
+            this.chestsort$whitelistPresets = new ArrayList<>();
             this.chestsort$blacklistItems = new ArrayList<>();
             this.chestsort$blacklistTags = new ArrayList<>();
+            this.chestsort$blacklistPresets = new ArrayList<>();
             chestsort$applyTab(TAB_WHITELIST);
             return;
         }
@@ -163,8 +170,10 @@ public final class PresetEditorScreen extends Screen {
 
         this.chestsort$whitelistItems = new ArrayList<>(safeWl.items() == null ? List.of() : safeWl.items());
         this.chestsort$whitelistTags = new ArrayList<>(safeWl.tags() == null ? List.of() : safeWl.tags());
+        this.chestsort$whitelistPresets = new ArrayList<>(safeWl.presets() == null ? List.of() : safeWl.presets());
         this.chestsort$blacklistItems = new ArrayList<>(safeBl.items() == null ? List.of() : safeBl.items());
         this.chestsort$blacklistTags = new ArrayList<>(safeBl.tags() == null ? List.of() : safeBl.tags());
+        this.chestsort$blacklistPresets = new ArrayList<>(safeBl.presets() == null ? List.of() : safeBl.presets());
 
         chestsort$applyTab(this.chestsort$tab);
 
@@ -179,9 +188,11 @@ public final class PresetEditorScreen extends Screen {
         if (this.chestsort$tab == TAB_BLACKLIST) {
             this.editingItems = this.chestsort$blacklistItems;
             this.editingTags = this.chestsort$blacklistTags;
+            this.editingPresets = this.chestsort$blacklistPresets;
         } else {
             this.editingItems = this.chestsort$whitelistItems;
             this.editingTags = this.chestsort$whitelistTags;
+            this.editingPresets = this.chestsort$whitelistPresets;
         }
 
         this.leftScroll = 0;
@@ -193,7 +204,7 @@ public final class PresetEditorScreen extends Screen {
             this.tagBrowserItems = List.of();
         }
         if (this.searchField != null) {
-            this.searchField.setText("");
+            this.searchField.setValue("");
         }
         updateSearchResults();
     }
@@ -204,13 +215,13 @@ public final class PresetEditorScreen extends Screen {
         ContainerFilterSpec wl = new ContainerFilterSpec(
             ContainerFilterSpec.normalizeStrings(this.chestsort$whitelistItems),
             this.chestsort$whitelistTags,
-            List.of()
+            ContainerFilterSpec.normalizeStrings(this.chestsort$whitelistPresets)
         ).normalized();
 
         ContainerFilterSpec bl = new ContainerFilterSpec(
             ContainerFilterSpec.normalizeStrings(this.chestsort$blacklistItems),
             this.chestsort$blacklistTags,
-            List.of()
+            ContainerFilterSpec.normalizeStrings(this.chestsort$blacklistPresets)
         ).normalized();
 
         ClientNetworkingUtil.sendSafe(new SetPresetV2Payload(this.presetName, wl, bl));
@@ -221,7 +232,7 @@ public final class PresetEditorScreen extends Screen {
     private void ensureAllItems() {
         if (this.allItems != null) return;
         this.allItems = new ArrayList<>();
-        for (Item item : Registries.ITEM) {
+        for (Item item : BuiltInRegistries.ITEM) {
             this.allItems.add(item);
         }
     }
@@ -229,11 +240,17 @@ public final class PresetEditorScreen extends Screen {
     private void updateSearchResults() {
         ensureAllItems();
 
-        String query = this.searchField == null ? "" : (this.searchField.getText() == null ? "" : this.searchField.getText().trim().toLowerCase(java.util.Locale.ROOT));
+        String query = this.searchField == null ? "" : this.searchField.getValue().trim().toLowerCase(java.util.Locale.ROOT);
+        // '@' is an alias for the '&' preset-search prefix.
+        if (query.startsWith("@")) {
+            query = "&" + query.substring(1);
+        }
+
+        this.resultPresetNames = List.of();
 
         // If the query matches entries already in the filter, move them to the top so the user can see
         // they are already added (and keep them out of the search results).
-        if (!this.tagBrowserMode && !query.isEmpty()) {
+        if (!this.tagBrowserMode && !query.isEmpty() && !query.startsWith("&")) {
             if (query.startsWith("#")) {
                 chestsort$bumpMatchingTagsToTop(query);
             } else {
@@ -241,10 +258,45 @@ public final class PresetEditorScreen extends Screen {
             }
         }
 
+        // Preset search: prefix '&' (or '@') filters preset names, so one preset can reference another.
+        if (!this.tagBrowserMode && query.startsWith("&")) {
+            String q = query.substring(1).trim();
+            ArrayList<Item> items = new ArrayList<>(16);
+            ArrayList<String> tagIds = new ArrayList<>(16);
+            ArrayList<String> presetNames = new ArrayList<>(16);
+            ArrayList<String> subtitles = new ArrayList<>(16);
+
+            HashSet<String> alreadyApplied = new HashSet<>(this.editingPresets);
+
+            for (String name : ClientPresetRegistry.namesSorted()) {
+                if (name == null) continue;
+                if (name.equals(this.presetName)) continue; // no self-reference
+                if (alreadyApplied.contains(name.trim())) continue;
+                String lcName = name.toLowerCase(java.util.Locale.ROOT);
+                if (q.isEmpty() || lcName.startsWith(q) || lcName.contains(q)) {
+                    items.add(null);
+                    tagIds.add("");
+                    presetNames.add(name);
+                    ContainerFilterSpec spec = ClientPresetRegistry.get(name);
+                    int itemCount = spec == null || spec.items() == null ? 0 : spec.items().size();
+                    int tagCount = spec == null || spec.tags() == null ? 0 : spec.tags().size();
+                    subtitles.add("items: " + itemCount + " tags: " + tagCount);
+                    if (items.size() >= 200) break;
+                }
+            }
+
+            this.resultItems = items;
+            this.resultTagIds = tagIds;
+            this.resultPresetNames = presetNames;
+            this.resultSubtitles = subtitles;
+            this.resultsScroll = 0;
+            return;
+        }
+
         if (this.tagBrowserMode) {
             // Mirror container UI behavior: if the query starts with '#', show tag results (to allow
             // selecting a tag to browse), otherwise search within the items of the currently browsed tag.
-            if (!query.isEmpty() && query.startsWith("#")) {
+            if (query.startsWith("#")) {
                 String norm = ContainerFilterSpec.normalizeTagId(query);
                 Identifier id = parseTagIdentifier(norm);
 
@@ -290,13 +342,13 @@ public final class PresetEditorScreen extends Screen {
 
             for (Item item : this.tagBrowserItems) {
                 if (item == null) continue;
-                String itemId = String.valueOf(Registries.ITEM.getId(item));
+                String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
                 if (itemId.isEmpty()) continue;
                 if (exc.contains(itemId)) continue;
 
                 if (!query.isEmpty()) {
                     String idStr = itemId.toLowerCase(java.util.Locale.ROOT);
-                    String nameStr = Text.translatable(item.getTranslationKey()).getString().toLowerCase(java.util.Locale.ROOT);
+                    String nameStr = Component.translatable(item.getDescriptionId()).getString().toLowerCase(java.util.Locale.ROOT);
                     if (!idStr.contains(query) && !nameStr.contains(query)) continue;
                 }
 
@@ -369,9 +421,9 @@ public final class PresetEditorScreen extends Screen {
 
         HashSet<String> already = new HashSet<>(this.editingItems);
         for (Item item : this.allItems) {
-            Identifier id = Registries.ITEM.getId(item);
-            String idStr = id == null ? "" : id.toString();
-            String nameStr = Text.translatable(item.getTranslationKey()).getString().toLowerCase(java.util.Locale.ROOT);
+            Identifier id = BuiltInRegistries.ITEM.getKey(item);
+            String idStr = id.toString();
+            String nameStr = Component.translatable(item.getDescriptionId()).getString().toLowerCase(java.util.Locale.ROOT);
 
             // Keep already-added entries out of the results.
             if (!idStr.isEmpty() && already.contains(idStr)) continue;
@@ -391,28 +443,29 @@ public final class PresetEditorScreen extends Screen {
     }
 
     @Override
-    public boolean keyPressed(KeyInput keyInput) {
-        if (this.searchField != null && this.searchField.keyPressed(keyInput)) {
+    public boolean keyPressed(net.minecraft.client.input.@NonNull KeyEvent event) { // Or KeyInput if using Yarn
+        // Pass the input object down to the search field
+        if (this.searchField != null && this.searchField.keyPressed(event)) {
             return true;
         }
 
-        MinecraftClient mc = MinecraftClient.getInstance();
-        if (keyInput.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+        Minecraft mc = Minecraft.getInstance();
+
+        // Extract the numerical keyCode from the event object
+        if (event.key() == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
             if (this.tagBrowserMode) {
                 this.tagBrowserMode = false;
                 this.tagBrowserTagId = "";
                 this.tagBrowserItems = List.of();
-                if (this.searchField != null) this.searchField.setText("");
+                if (this.searchField != null) this.searchField.setValue("");
                 updateSearchResults();
                 return true;
             }
-            if (mc != null) {
-                mc.setScreen(null);
-            }
+            mc.gui.setScreen(null);
             return true;
         }
 
-        return super.keyPressed(keyInput);
+        return super.keyPressed(event);
     }
 
     @Override
@@ -453,11 +506,13 @@ public final class PresetEditorScreen extends Screen {
     }
 
     @Override
-    public boolean mouseClicked(net.minecraft.client.gui.Click click, boolean bl) {
-        int button = click.button();
-        double mouseX = click.x();
-        double mouseY = click.y();
-        if (button != 0) return super.mouseClicked(click, bl);
+    public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        // Extract properties from the event wrapper
+        int button = event.button();
+        double mouseX = event.x();
+        double mouseY = event.y();
+
+        if (button != 0) return super.mouseClicked(event, doubleClick);
 
         int panelW = chestsort$panelW();
         int leftX = chestsort$leftX(panelW);
@@ -473,13 +528,12 @@ public final class PresetEditorScreen extends Screen {
                 if (this.chestsort$tab != TAB_WHITELIST) {
                     chestsort$applyTab(TAB_WHITELIST);
                 }
-                return true;
             } else {
                 if (this.chestsort$tab != TAB_BLACKLIST) {
                     chestsort$applyTab(TAB_BLACKLIST);
                 }
-                return true;
             }
+            return true;
         }
 
         int actionX1Left = (leftX + panelW) - ACTION_PAD - ACTION_W;
@@ -511,7 +565,7 @@ public final class PresetEditorScreen extends Screen {
                             this.tagBrowserMode = false;
                             this.tagBrowserTagId = "";
                             this.tagBrowserItems = List.of();
-                            if (this.searchField != null) this.searchField.setText("");
+                            if (this.searchField != null) this.searchField.setValue("");
                             updateSearchResults();
                         }
                         chestsort$clampLeftScroll();
@@ -525,11 +579,18 @@ public final class PresetEditorScreen extends Screen {
                         this.tagBrowserTagId = tagId;
                         rebuildTagBrowserItems();
                         if (this.searchField != null) {
-                            this.searchField.setText("");
+                            this.searchField.setValue("");
                         }
                         updateSearchResults();
                         return true;
                     }
+                }
+            } else if (kind == 5) {
+                // preset
+                if (mouseX >= actionX1Left && mouseX < actionX2Left && idx >= 0 && idx < this.editingPresets.size()) {
+                    this.editingPresets.remove(idx);
+                    chestsort$clampLeftScroll();
+                    return true;
                 }
             }
         }
@@ -545,8 +606,21 @@ public final class PresetEditorScreen extends Screen {
                 if (realIdx >= 0 && realIdx < getResultsSize()) {
                     Item entryItem = this.resultItems.get(realIdx);
                     String entryTagId = realIdx < this.resultTagIds.size() ? this.resultTagIds.get(realIdx) : "";
+                    String entryPreset = realIdx < this.resultPresetNames.size() ? this.resultPresetNames.get(realIdx) : "";
 
                     boolean isTag = entryItem == null && entryTagId != null && !entryTagId.isEmpty();
+                    boolean isPreset = entryItem == null && (entryTagId == null || entryTagId.isEmpty()) && entryPreset != null && !entryPreset.isEmpty();
+                    if (isPreset) {
+                        String presetName = entryPreset.trim();
+                        if (!presetName.isEmpty()) {
+                            int existing = this.editingPresets.indexOf(presetName);
+                            if (existing >= 0) {
+                                this.editingPresets.remove(existing);
+                            }
+                            this.editingPresets.add(0, presetName);
+                        }
+                        return true;
+                    }
                     if (this.tagBrowserMode) {
                         if (isTag) {
                             String tagId = ContainerFilterSpec.normalizeTagId(entryTagId);
@@ -555,18 +629,18 @@ public final class PresetEditorScreen extends Screen {
                                 if (existing >= 0) {
                                     chestsort$moveTagToTop(existing);
                                 } else {
-                                    this.editingTags.add(0, new TagFilterSpec(tagId, List.of()));
+                                    this.editingTags.addFirst(new TagFilterSpec(tagId, List.of()));
                                 }
 
                                 this.tagBrowserTagId = tagId;
                                 rebuildTagBrowserItems();
-                                if (this.searchField != null) this.searchField.setText("");
+                                if (this.searchField != null) this.searchField.setValue("");
                                 updateSearchResults();
                                 return true;
                             }
                         }
                         if (entryItem != null) {
-                            String itemId = String.valueOf(Registries.ITEM.getId(entryItem));
+                            String itemId = BuiltInRegistries.ITEM.getKey(entryItem).toString();
                             addTagException(itemId);
                             return true;
                         }
@@ -578,18 +652,18 @@ public final class PresetEditorScreen extends Screen {
                                 chestsort$moveTagToTop(existing);
                                 return true;
                             }
-                            this.editingTags.add(0, new TagFilterSpec(tagId, List.of()));
+                            this.editingTags.addFirst(new TagFilterSpec(tagId, List.of()));
                             return true;
                         }
                     } else if (entryItem != null) {
-                        String itemId = String.valueOf(Registries.ITEM.getId(entryItem));
+                        String itemId = BuiltInRegistries.ITEM.getKey(entryItem).toString();
                         if (!itemId.isEmpty()) {
                             int existing = this.editingItems.indexOf(itemId);
                             if (existing >= 0) {
                                 chestsort$moveItemToTop(existing);
                                 return true;
                             }
-                            this.editingItems.add(0, itemId);
+                            this.editingItems.addFirst(itemId);
                             return true;
                         }
                     }
@@ -597,7 +671,7 @@ public final class PresetEditorScreen extends Screen {
             }
         }
 
-        return super.mouseClicked(click, bl);
+        return super.mouseClicked(event, doubleClick);
     }
 
     private boolean hasTag(String tagIdRaw) {
@@ -622,13 +696,13 @@ public final class PresetEditorScreen extends Screen {
     private void chestsort$moveItemToTop(int idx) {
         if (idx <= 0 || idx >= this.editingItems.size()) return;
         String v = this.editingItems.remove(idx);
-        this.editingItems.add(0, v);
+        this.editingItems.addFirst(v);
     }
 
     private void chestsort$moveTagToTop(int idx) {
         if (idx <= 0 || idx >= this.editingTags.size()) return;
         TagFilterSpec v = this.editingTags.remove(idx);
-        this.editingTags.add(0, v);
+        this.editingTags.addFirst(v);
     }
 
     private void chestsort$bumpMatchingItemsToTop(String queryLower) {
@@ -645,11 +719,12 @@ public final class PresetEditorScreen extends Screen {
             if (!match) {
                 Identifier id = Identifier.tryParse(itemId);
                 if (id != null) {
-                    Item item = Registries.ITEM.get(id);
-                    if (item != null) {
-                        String name = Text.translatable(item.getTranslationKey()).getString().toLowerCase(java.util.Locale.ROOT);
-                        match = name.contains(q);
-                    }
+                    // Extract the Item from the Optional<Holder.Reference<Item>>
+                    Item item = BuiltInRegistries.ITEM.get(id)
+                            .map(Holder.Reference::value) // Gets the Item out of the Holder reference
+                            .orElse(Items.AIR);           // Fallback if the Identifier was invalid
+                    String name = Component.translatable(item.getDescriptionId()).getString().toLowerCase(java.util.Locale.ROOT);
+                    match = name.contains(q);
                 }
             }
             if (match) matches.add(itemId);
@@ -666,7 +741,7 @@ public final class PresetEditorScreen extends Screen {
     private void chestsort$bumpMatchingTagsToTop(String queryLower) {
         if (queryLower == null) return;
         String q = ContainerFilterSpec.normalizeTagId(queryLower).toLowerCase(java.util.Locale.ROOT);
-        if (q.isEmpty() || !q.startsWith("#")) return;
+        if (!q.startsWith("#")) return;
 
         ArrayList<TagFilterSpec> matches = new ArrayList<>();
         ArrayList<TagFilterSpec> rest = new ArrayList<>();
@@ -693,17 +768,15 @@ public final class PresetEditorScreen extends Screen {
 
         Thread t = new Thread(() -> {
             List<String> ids = chestsort$collectAllItemTagIds();
-            if (ids == null || ids.isEmpty()) {
+            if (ids.isEmpty()) {
                 // Tags may not be bound yet; allow retry later.
                 this.chestsort$tagIdScanStarted = false;
                 return;
             }
 
             this.chestsort$allItemTagIds = ids;
-            MinecraftClient mc = MinecraftClient.getInstance();
-            if (mc != null) {
-                mc.execute(this::updateSearchResults);
-            }
+            Minecraft mc = Minecraft.getInstance();
+            mc.execute(this::updateSearchResults);
         }, "chestsort-tag-ids");
         t.setDaemon(true);
         t.start();
@@ -712,18 +785,13 @@ public final class PresetEditorScreen extends Screen {
     private static List<String> chestsort$collectAllItemTagIds() {
         LinkedHashSet<String> out = new LinkedHashSet<>();
         try {
-            MinecraftClient mc = MinecraftClient.getInstance();
-            net.minecraft.registry.Registry<Item> registry = (mc != null && mc.world != null)
-                ? mc.world.getRegistryManager().getOrThrow(RegistryKeys.ITEM)
-                : Registries.ITEM;
-
-            registry.streamTags().forEach(named -> {
-                if (named == null) return;
-                TagKey<Item> key = named.getTag();
-                if (key == null) return;
-                Identifier id = key.id();
-                if (id != null) out.add("#" + id);
-            });
+            for (Item item : BuiltInRegistries.ITEM) {
+                for (TagKey<Item> key : item.builtInRegistryHolder().tags().toList()) {
+                    if (key == null) continue;
+                    Identifier id = key.location();
+                    if (id != null) out.add("#" + id);
+                }
+            }
         } catch (Throwable ignored) {
         }
 
@@ -738,20 +806,24 @@ public final class PresetEditorScreen extends Screen {
     }
 
     private static void chestsort$collectTagIdFromUnknown(Object o, java.util.Set<String> out) {
-        if (o == null) return;
-
-        if (o instanceof TagKey<?> tagKey) {
-            Identifier id = tagKey.id();
-            if (id != null) out.add("#" + id);
-            return;
-        }
-
-        if (o instanceof Map.Entry<?, ?> e) {
-            Object k = e.getKey();
-            if (k instanceof TagKey<?> tk) {
-                Identifier id = tk.id();
-                if (id != null) out.add("#" + id);
+        switch (o) {
+            case null -> {
                 return;
+            }
+            case TagKey<?> tagKey -> {
+                Identifier id = tagKey.location();
+                out.add("#" + id);
+                return;
+            }
+            case Map.Entry<?, ?> e -> {
+                Object k = e.getKey();
+                if (k instanceof TagKey<?> tk) {
+                    Identifier id = tk.location();
+                    out.add("#" + id);
+                    return;
+                }
+            }
+            default -> {
             }
         }
 
@@ -765,8 +837,8 @@ public final class PresetEditorScreen extends Screen {
                 }
                 Object k = m.invoke(o);
                 if (k instanceof TagKey<?> tk) {
-                    Identifier id = tk.id();
-                    if (id != null) out.add("#" + id);
+                    Identifier id = tk.location();
+                    out.add("#" + id);
                     return;
                 }
             }
@@ -775,13 +847,18 @@ public final class PresetEditorScreen extends Screen {
     }
 
     private int getLeftRowKind(int rowIndex) {
-        // 0 items header, 1 item row, 2 tags header, 3 tag row
+        // 0 items header, 1 item row, 2 tags header, 3 tag row, 4 presets header, 5 preset row
         if (rowIndex == 0) return 0;
         int itemsN = this.editingItems.size();
         if (rowIndex >= 1 && rowIndex < 1 + itemsN) return 1;
         if (rowIndex == 1 + itemsN) return 2;
         int tagStart = 2 + itemsN;
-        if (rowIndex >= tagStart && rowIndex < tagStart + this.editingTags.size()) return 3;
+        int tagsN = this.editingTags.size();
+        if (rowIndex >= tagStart && rowIndex < tagStart + tagsN) return 3;
+        int presetHeader = tagStart + tagsN;
+        if (rowIndex == presetHeader) return 4;
+        int presetStart = presetHeader + 1;
+        if (rowIndex >= presetStart && rowIndex < presetStart + this.editingPresets.size()) return 5;
         return -1;
     }
 
@@ -789,7 +866,10 @@ public final class PresetEditorScreen extends Screen {
         int itemsN = this.editingItems.size();
         if (rowIndex >= 1 && rowIndex < 1 + itemsN) return rowIndex - 1;
         int tagStart = 2 + itemsN;
-        if (rowIndex >= tagStart && rowIndex < tagStart + this.editingTags.size()) return rowIndex - tagStart;
+        int tagsN = this.editingTags.size();
+        if (rowIndex >= tagStart && rowIndex < tagStart + tagsN) return rowIndex - tagStart;
+        int presetStart = tagStart + tagsN + 1;
+        if (rowIndex >= presetStart && rowIndex < presetStart + this.editingPresets.size()) return rowIndex - presetStart;
         return -1;
     }
 
@@ -801,17 +881,15 @@ public final class PresetEditorScreen extends Screen {
         return Math.max(1, chestsort$getRowsAreaH() / ROW_H);
     }
 
+
     @Override
-    public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+    public void extractRenderState(GuiGraphicsExtractor context, int mouseX, int mouseY, float delta) {
         // Avoid Screen.renderBackground(), which applies the GUI blur effect.
         // In newer Minecraft versions, blur can only be applied once per frame.
         context.fill(0, 0, this.width, this.height, 0xAA000000);
 
-        TextRenderer tr = MinecraftClient.getInstance().textRenderer;
-        if (tr == null) {
-            super.render(context, mouseX, mouseY, delta);
-            return;
-        }
+        // Fixed TextRenderer -> Font, and .textRenderer -> .font
+        Font font = net.minecraft.client.Minecraft.getInstance().font;
 
         int panelW = chestsort$panelW();
         int leftX = chestsort$leftX(panelW);
@@ -819,7 +897,7 @@ public final class PresetEditorScreen extends Screen {
         int topY = Math.max(10, (this.height - PANEL_H) / 2);
 
         String headerText = this.presetName.isEmpty() ? "Preset editor" : ("Preset: " + this.presetName);
-        context.drawTextWithShadow(tr, Text.literal(headerText), leftX, topY - 10, 0xFFFFFFFF);
+        context.text(font, net.minecraft.network.chat.Component.literal(headerText), leftX, topY - 10, 0xFFFFFFFF);
 
         // Panel backgrounds
         context.fill(leftX, topY, leftX + panelW, topY + PANEL_H, 0xAA000000);
@@ -827,7 +905,7 @@ public final class PresetEditorScreen extends Screen {
 
         // Right header
         String rightTitle = this.tagBrowserMode ? ("Tag: " + this.tagBrowserTagId) : "Results";
-        context.drawTextWithShadow(tr, Text.literal(rightTitle), rightX + 6, topY + 6 + 24 + 24, 0xFFFFFFFF);
+        context.text(font, net.minecraft.network.chat.Component.literal(rightTitle), rightX + 6, topY + 6 + 24 + 24, 0xFFFFFFFF);
 
         // Tabs (left header row)
         int tabY1 = topY + 24 + 24;
@@ -837,8 +915,8 @@ public final class PresetEditorScreen extends Screen {
         int blColor = (this.chestsort$tab == TAB_BLACKLIST) ? 0xFF303030 : 0xFF202020;
         context.fill(leftX, tabY1, leftX + half, tabY2, wlColor);
         context.fill(leftX + half, tabY1, leftX + panelW, tabY2, blColor);
-        context.drawTextWithShadow(tr, Text.literal("Whitelist"), leftX + 8, tabY1 + 4, 0xFFFFFFFF);
-        context.drawTextWithShadow(tr, Text.literal("Blacklist"), leftX + half + 8, tabY1 + 4, 0xFFFFFFFF);
+        context.text(font, net.minecraft.network.chat.Component.literal("Whitelist"), leftX + 8, tabY1 + 4, 0xFFFFFFFF);
+        context.text(font, net.minecraft.network.chat.Component.literal("Blacklist"), leftX + half + 8, tabY1 + 4, 0xFFFFFFFF);
 
         int rowsY = topY + 24 + 24 + HEADER_H;
         int shownLeft = getLeftRowsShown();
@@ -857,29 +935,39 @@ public final class PresetEditorScreen extends Screen {
             context.fill(leftX + 6, y, leftX + panelW - 6, y + ROW_H - 1, 0xFF202020);
 
             if (kind == 0) {
-                context.drawTextWithShadow(tr, Text.literal("Items (" + this.editingItems.size() + ")"), leftX + 8, y + 5, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal("Items (" + this.editingItems.size() + ")"), leftX + 8, y + 5, 0xFFFFFFFF);
                 continue;
             }
             if (kind == 2) {
-                context.drawTextWithShadow(tr, Text.literal("Tags (" + this.editingTags.size() + ")"), leftX + 8, y + 5, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal("Tags (" + this.editingTags.size() + ")"), leftX + 8, y + 5, 0xFFFFFFFF);
+                continue;
+            }
+            if (kind == 4) {
+                context.text(font, net.minecraft.network.chat.Component.literal("Presets (" + this.editingPresets.size() + ")"), leftX + 8, y + 5, 0xFFFFFFFF);
                 continue;
             }
 
             context.fill(actionX1Left, y, actionX2Left, y + ROW_H - 1, 0xFFFF5555);
-            context.drawTextWithShadow(tr, Text.literal("x"), actionX1Left + 4, y + 5, 0xFFFFFFFF);
+            context.text(font, net.minecraft.network.chat.Component.literal("x"), actionX1Left + 4, y + 5, 0xFFFFFFFF);
 
             if (kind == 1) {
                 if (idx < 0 || idx >= this.editingItems.size()) continue;
                 String itemId = this.editingItems.get(idx);
                 Identifier id = Identifier.tryParse(itemId);
-                if (id != null && Registries.ITEM.containsId(id)) {
-                    Item item = Registries.ITEM.get(id);
-                    context.drawItem(new ItemStack(item), leftX + 8, y + 1);
-                    String name = Text.translatable(item.getTranslationKey()).getString();
-                    context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(name, actionX1Left - (leftX + 28) - 4)), leftX + 28, y + 2, 0xFFFFFFFF);
-                    context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(itemId, actionX1Left - (leftX + 28) - 4)), leftX + 28, y + 10, 0xFF9A9A9A);
+
+                if (id != null && net.minecraft.core.registries.BuiltInRegistries.ITEM.containsKey(id)) {
+                    Item item = net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)
+                            .map(net.minecraft.core.Holder.Reference::value)
+                            .orElse(null);
+
+                    if (item != null) {
+                        context.item(new net.minecraft.world.item.ItemStack(item), leftX + 8, y + 1);
+                        String name = net.minecraft.network.chat.Component.translatable(item.getDescriptionId()).getString();
+                        context.text(font, net.minecraft.network.chat.Component.literal(font.plainSubstrByWidth(name, actionX1Left - (leftX + 28) - 4)), leftX + 28, y + 2, 0xFFFFFFFF);
+                        context.text(font, net.minecraft.network.chat.Component.literal(font.plainSubstrByWidth(itemId, actionX1Left - (leftX + 28) - 4)), leftX + 28, y + 10, 0xFF9A9A9A);
+                    }
                 } else {
-                    context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(itemId, actionX1Left - (leftX + 8) - 4)), leftX + 8, y + 5, 0xFFFFFFFF);
+                    context.text(font, net.minecraft.network.chat.Component.literal(font.plainSubstrByWidth(itemId, actionX1Left - (leftX + 8) - 4)), leftX + 8, y + 5, 0xFFFFFFFF);
                 }
             } else if (kind == 3) {
                 if (idx < 0 || idx >= this.editingTags.size()) continue;
@@ -887,15 +975,26 @@ public final class PresetEditorScreen extends Screen {
                 String tagId = ContainerFilterSpec.normalizeTagId(tag == null ? "" : tag.tagId());
                 Item icon = chestsort$getTagCycleIcon(tagId);
                 if (icon != null) {
-                    context.drawItem(new ItemStack(icon), leftX + 8, y + 1);
+                    context.item(new net.minecraft.world.item.ItemStack(icon), leftX + 8, y + 1);
                 }
 
                 String name = chestsort$formatTagDisplayName(tagId);
                 String sub = tagId;
                 int textX = leftX + 28;
                 int textW = Math.max(0, actionX1Left - textX - 4);
-                context.drawTextWithShadow(tr, Text.literal(textW <= 0 ? name : tr.trimToWidth(name, textW)), textX, y + 2, 0xFFFFFFFF);
-                context.drawTextWithShadow(tr, Text.literal(textW <= 0 ? sub : tr.trimToWidth(sub, textW)), textX, y + 10, 0xFF9A9A9A);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? name : font.plainSubstrByWidth(name, textW)), textX, y + 2, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? sub : font.plainSubstrByWidth(sub, textW)), textX, y + 10, 0xFF9A9A9A);
+            } else if (kind == 5) {
+                if (idx < 0 || idx >= this.editingPresets.size()) continue;
+                String presetName = this.editingPresets.get(idx);
+                ContainerFilterSpec spec = ClientPresetRegistry.get(presetName);
+                int itemCount = spec == null || spec.items() == null ? 0 : spec.items().size();
+                int tagCount = spec == null || spec.tags() == null ? 0 : spec.tags().size();
+                int textX = leftX + 8;
+                int textW = Math.max(0, actionX1Left - textX - 4);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? presetName : font.plainSubstrByWidth(presetName, textW)), textX, y + 2, 0xFFFFFFFF);
+                String sub = "items: " + itemCount + " tags: " + tagCount;
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? sub : font.plainSubstrByWidth(sub, textW)), textX, y + 10, 0xFF9A9A9A);
             }
         }
 
@@ -910,37 +1009,44 @@ public final class PresetEditorScreen extends Screen {
 
             Item entryItem = this.resultItems.get(idx);
             String entryTagId = idx < this.resultTagIds.size() ? this.resultTagIds.get(idx) : "";
+            String entryPreset = idx < this.resultPresetNames.size() ? this.resultPresetNames.get(idx) : "";
             String subtitle = idx < this.resultSubtitles.size() ? this.resultSubtitles.get(idx) : "";
 
             boolean isTag = entryItem == null && entryTagId != null && !entryTagId.isEmpty();
+            boolean isPreset = entryItem == null && (entryTagId == null || entryTagId.isEmpty()) && entryPreset != null && !entryPreset.isEmpty();
             boolean actionIsException = this.tagBrowserMode && !isTag;
             int actionColor = actionIsException ? 0xFFFF5555 : 0xFF55FF55;
             String actionText = actionIsException ? "x" : "+";
             context.fill(actionX1Right, y, actionX2Right, y + ROW_H - 1, actionColor);
-            context.drawTextWithShadow(tr, Text.literal(actionText), actionX1Right + 4, y + 5, 0xFFFFFFFF);
+            context.text(font, net.minecraft.network.chat.Component.literal(actionText), actionX1Right + 4, y + 5, 0xFFFFFFFF);
 
-            if (isTag) {
+            if (isPreset) {
+                int textX = rightX + 8;
+                int textW = Math.max(0, actionX1Right - textX - 4);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? entryPreset : font.plainSubstrByWidth(entryPreset, textW)), textX, y + 2, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? subtitle : font.plainSubstrByWidth(subtitle, textW)), textX, y + 10, 0xFF9A9A9A);
+            } else if (isTag) {
                 String tagId = ContainerFilterSpec.normalizeTagId(entryTagId);
                 Item icon = chestsort$getTagCycleIcon(tagId);
                 if (icon != null) {
-                    context.drawItem(new ItemStack(icon), rightX + 8, y + 1);
+                    context.item(new net.minecraft.world.item.ItemStack(icon), rightX + 8, y + 1);
                 }
 
                 String name = chestsort$formatTagDisplayName(tagId);
                 String sub = subtitle == null || subtitle.isEmpty() ? tagId : subtitle;
                 int textX = rightX + 28;
                 int textW = Math.max(0, actionX1Right - textX - 4);
-                context.drawTextWithShadow(tr, Text.literal(textW <= 0 ? name : tr.trimToWidth(name, textW)), textX, y + 2, 0xFFFFFFFF);
-                context.drawTextWithShadow(tr, Text.literal(textW <= 0 ? sub : tr.trimToWidth(sub, textW)), textX, y + 10, 0xFF9A9A9A);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? name : font.plainSubstrByWidth(name, textW)), textX, y + 2, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal(textW <= 0 ? sub : font.plainSubstrByWidth(sub, textW)), textX, y + 10, 0xFF9A9A9A);
             } else if (entryItem != null) {
-                context.drawItem(new ItemStack(entryItem), rightX + 8, y + 1);
-                String name = Text.translatable(entryItem.getTranslationKey()).getString();
-                context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(name, actionX1Right - (rightX + 28) - 4)), rightX + 28, y + 2, 0xFFFFFFFF);
-                context.drawTextWithShadow(tr, Text.literal(tr.trimToWidth(subtitle, actionX1Right - (rightX + 28) - 4)), rightX + 28, y + 10, 0xFF9A9A9A);
+                context.item(new net.minecraft.world.item.ItemStack(entryItem), rightX + 8, y + 1);
+                String name = net.minecraft.network.chat.Component.translatable(entryItem.getDescriptionId()).getString();
+                context.text(font, net.minecraft.network.chat.Component.literal(font.plainSubstrByWidth(name, actionX1Right - (rightX + 28) - 4)), rightX + 28, y + 2, 0xFFFFFFFF);
+                context.text(font, net.minecraft.network.chat.Component.literal(font.plainSubstrByWidth(subtitle, actionX1Right - (rightX + 28) - 4)), rightX + 28, y + 10, 0xFF9A9A9A);
             }
         }
 
-        super.render(context, mouseX, mouseY, delta);
+        super.extractRenderState(context, mouseX, mouseY, delta);
     }
 
     private static Identifier parseTagIdentifier(String tagId) {
@@ -961,28 +1067,28 @@ public final class PresetEditorScreen extends Screen {
         StringBuilder sb = new StringBuilder();
         for (String p : parts) {
             if (p.isEmpty()) continue;
-            if (sb.length() > 0) sb.append(' ');
+            if (!sb.isEmpty()) sb.append(' ');
             sb.append(Character.toUpperCase(p.charAt(0))).append(p.substring(1));
         }
-        return sb.length() == 0 ? tagId : sb.toString();
+        return sb.isEmpty() ? tagId : sb.toString();
     }
 
     private Item chestsort$getTagCycleIcon(String tagId) {
         Identifier id = parseTagIdentifier(tagId);
         if (id == null) return null;
         List<Item> items = this.tagItemsCache.computeIfAbsent(tagId, k -> computeItemsForTag(id));
-        if (items == null || items.isEmpty()) return null;
+        if (items.isEmpty()) return null;
         long now = System.currentTimeMillis();
         int idx = (int) ((now / 750L) % items.size());
         return items.get(Math.max(0, Math.min(idx, items.size() - 1)));
     }
 
     private List<Item> computeItemsForTag(Identifier tagIdentifier) {
-        TagKey<Item> key = TagKey.of(RegistryKeys.ITEM, tagIdentifier);
+        TagKey<Item> key = TagKey.create(Registries.ITEM, tagIdentifier);
         ArrayList<Item> out = new ArrayList<>();
-        for (Item item : Registries.ITEM) {
+        for (Item item : BuiltInRegistries.ITEM) {
             // Prefer default stack (avoids per-loop explicit new ItemStack(item)).
-            if (item.getDefaultStack().isIn(key)) {
+            if (item.getDefaultInstance().is(key)) {
                 out.add(item);
                 if (out.size() >= 200) break;
             }
@@ -997,7 +1103,7 @@ public final class PresetEditorScreen extends Screen {
             return;
         }
         List<Item> items = this.tagItemsCache.computeIfAbsent(this.tagBrowserTagId, k -> computeItemsForTag(id));
-        this.tagBrowserItems = items == null ? List.of() : items;
+        this.tagBrowserItems = items;
     }
 
     private void addTagException(String itemId) {

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat /tmp/ClientQuickMoveQueue.java.orig)",
+      "Read(//private/tmp/**)",
+      "Bash(./gradlew build *)",
+      "Bash(./gradlew compileClientJava --console=plain)",
+      "Bash(grep -n 'chestsort$renderPanels\\\\|extractRenderState.*At\\(\"HEAD\"\\)' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)",
+      "Bash(grep -n 'private boolean chestsort$filterMode' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)",
+      "Bash(awk '/filterMode = false/{print NR\": \"$0}' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)",
+      "Bash(python3 -c ' *)",
+      "Bash(./gradlew compileJava compileClientJava --console=plain)",
+      "Bash([ -f \"$L\" ])",
+      "Bash(grep -n 'chestsort$tryImportFromPopup\\\\|chestsort$tryImportPresetFromPopup' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)",
+      "Bash(grep -n 'chestsort$searchResultPresetNames\\\\|editingFilterPresets.add\\\\|editingFilterPresets\\\\.contains' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)",
+      "Bash(grep -n 'private void chestsort$updateSearchResults' src/client/java/dev/dromer/chestsort/mixin/client/HandledScreenMixin.java)"
+    ]
+  }
+}

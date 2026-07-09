@@ -9,45 +9,45 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import dev.dromer.chestsort.data.ChestSortState;
 import dev.dromer.chestsort.filter.ContainerFilterSpec;
 import dev.dromer.chestsort.net.ChestSortNetworking;
-import net.minecraft.item.ItemStack;
-import net.minecraft.network.packet.c2s.play.ClickSlotC2SPacket;
-import net.minecraft.network.packet.c2s.play.CreativeInventoryActionC2SPacket;
-import net.minecraft.network.packet.c2s.play.PlayerActionC2SPacket;
-import net.minecraft.registry.Registries;
-import net.minecraft.screen.GenericContainerScreenHandler;
-import net.minecraft.screen.slot.SlotActionType;
-import net.minecraft.server.network.ServerPlayNetworkHandler;
-import net.minecraft.server.network.ServerPlayerEntity;
-import net.minecraft.server.world.ServerWorld;
-import net.minecraft.text.Text;
-import net.minecraft.util.Formatting;
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.network.protocol.game.ServerboundContainerClickPacket;
+import net.minecraft.network.protocol.game.ServerboundSetCreativeModeSlotPacket;
+import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.world.inventory.ChestMenu;
+import net.minecraft.world.inventory.ContainerInput;
+import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.network.chat.Component;
+import net.minecraft.ChatFormatting;
+import net.minecraft.core.BlockPos;
 
-@Mixin(ServerPlayNetworkHandler.class)
-public class ServerPlayNetworkHandlerMixin {
+@Mixin(ServerGamePacketListenerImpl.class)
+public class ServerGamePacketListenerImplMixin {
 
     @Shadow
-    public ServerPlayerEntity player;
+    public ServerPlayer player;
 
-    @Inject(method = "onPlayerAction", at = @At("HEAD"), cancellable = true)
-    private void chestsort$wandSelectPos1(PlayerActionC2SPacket packet, CallbackInfo ci) {
+    @Inject(method = "handlePlayerAction", at = @At("HEAD"), cancellable = true)
+    private void chestsort$wandSelectPos1(ServerboundPlayerActionPacket packet, CallbackInfo ci) {
         if (player == null) return;
-        if (!(player.getEntityWorld() instanceof ServerWorld world)) return;
+        if (!(player.level() instanceof ServerLevel world)) return;
         if (packet == null) return;
-        if (packet.getAction() != PlayerActionC2SPacket.Action.START_DESTROY_BLOCK) return;
+        if (packet.getAction() != ServerboundPlayerActionPacket.Action.START_DESTROY_BLOCK) return;
 
         ChestSortState state = ChestSortState.get(world.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         String wandItemId = state.getWandItemId(uuid);
         if (wandItemId == null || wandItemId.isEmpty()) return;
 
         boolean holdingWand = false;
-        if (!player.getMainHandStack().isEmpty()) {
-            String id = String.valueOf(Registries.ITEM.getId(player.getMainHandStack().getItem()));
+        if (!player.getMainHandItem().isEmpty()) {
+            String id = BuiltInRegistries.ITEM.getKey(player.getMainHandItem().getItem()).toString();
             holdingWand = wandItemId.equals(id);
         }
-        if (!holdingWand && !player.getOffHandStack().isEmpty()) {
-            String id = String.valueOf(Registries.ITEM.getId(player.getOffHandStack().getItem()));
+        if (!holdingWand && !player.getOffhandItem().isEmpty()) {
+            String id = BuiltInRegistries.ITEM.getKey(player.getOffhandItem().getItem()).toString();
             holdingWand = wandItemId.equals(id);
         }
         if (!holdingWand) return;
@@ -55,40 +55,40 @@ public class ServerPlayNetworkHandlerMixin {
         BlockPos pos = packet.getPos();
         if (pos == null) return;
 
-        String dimId = world.getRegistryKey().getValue().toString();
+        String dimId = world.dimension().identifier().toString();
         state.setWandPos1(uuid, dimId, pos.asLong());
-        player.sendMessage(Text.literal("[CS] ").formatted(Formatting.GOLD)
-            .append(Text.literal("Wand pos1 set to ").formatted(Formatting.GRAY))
-            .append(Text.literal(pos.getX() + " " + pos.getY() + " " + pos.getZ()).formatted(Formatting.YELLOW)), false);
+        player.sendSystemMessage(Component.literal("[CS] ").withStyle(ChatFormatting.GOLD)
+            .append(Component.literal("Wand pos1 set to ").withStyle(ChatFormatting.GRAY))
+            .append(Component.literal(pos.getX() + " " + pos.getY() + " " + pos.getZ()).withStyle(ChatFormatting.YELLOW)), false);
 
         // Prevent breaking blocks while selecting.
         ci.cancel();
     }
 
-    @Inject(method = "onClickSlot", at = @At("HEAD"), cancellable = true)
-    private void chestsort$preventBlacklistedEntry(ClickSlotC2SPacket packet, CallbackInfo ci) {
+    @Inject(method = "handleContainerClick", at = @At("HEAD"), cancellable = true)
+    private void chestsort$preventBlacklistedEntry(ServerboundContainerClickPacket packet, CallbackInfo ci) {
         if (player == null) return;
-        if (!(player.getEntityWorld() instanceof ServerWorld world)) return;
+        if (!(player.level() instanceof ServerLevel world)) return;
         if (packet == null) return;
 
         ChestSortState state = ChestSortState.get(world.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         String mode = state.getBlacklistMode(uuid);
         if (!ChestSortState.blacklistModePreventsEntry(mode)) return;
 
-        if (!(player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) return;
+        if (!(player.containerMenu instanceof ChestMenu handler)) return;
 
-        int slot = packet.slot();
-        SlotActionType action = packet.actionType();
+        int slot = packet.slotNum();
+        ContainerInput action = packet.containerInput();
         if (action == null) return;
 
-        int containerSize = handler.getInventory().size();
+        int containerSize = handler.getContainer().getContainerSize();
         boolean strict = ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(mode);
 
         // Helper: check blacklist + optional whitelist override.
         java.util.function.Predicate<ItemStack> shouldBlock = (stack) -> {
             if (stack == null || stack.isEmpty()) return false;
-            String itemId = String.valueOf(Registries.ITEM.getId(stack.getItem()));
+            String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
             if (!state.isItemBlacklisted(uuid, itemId)) return false;
             if (strict) return true;
             // preventEntry: allow if whitelisted AND whitelistPriority enabled for this container.
@@ -98,9 +98,9 @@ public class ServerPlayNetworkHandlerMixin {
 
         // 1) Drag-split / drag-place (QUICK_CRAFT): packets often use slot=-999, so detect if any
         // modified slot is a container slot.
-        if (action == SlotActionType.QUICK_CRAFT) {
+        if (action == ContainerInput.QUICK_CRAFT) {
             boolean touchesContainer = false;
-            var modified = packet.modifiedStacks();
+            var modified = packet.changedSlots();
             if (modified != null && !modified.isEmpty()) {
                 for (var e : modified.int2ObjectEntrySet()) {
                     int idx = e.getIntKey();
@@ -111,77 +111,77 @@ public class ServerPlayNetworkHandlerMixin {
                 }
             }
             if (touchesContainer) {
-                ItemStack cursor = handler.getCursorStack();
+                ItemStack cursor = handler.getCarried();
                 if (shouldBlock.test(cursor)) {
                     ci.cancel();
-                    handler.sendContentUpdates();
+                    handler.sendAllDataToRemote();
                 }
             }
             return;
         }
 
         // 2) Normal click placing cursor stack into a container slot.
-        if (action == SlotActionType.PICKUP && slot >= 0 && slot < containerSize) {
-            ItemStack cursor = handler.getCursorStack();
+        if (action == ContainerInput.PICKUP && slot >= 0 && slot < containerSize) {
+            ItemStack cursor = handler.getCarried();
             if (shouldBlock.test(cursor)) {
                 ci.cancel();
-                handler.sendContentUpdates();
+                handler.sendAllDataToRemote();
             }
             return;
         }
 
         // 3) Shift-click from player inventory into container.
-        if (action == SlotActionType.QUICK_MOVE && slot >= containerSize) {
-            ItemStack clicked = handler.getSlot(slot).getStack();
+        if (action == ContainerInput.QUICK_MOVE && slot >= containerSize) {
+            ItemStack clicked = handler.getSlot(slot).getItem();
             if (shouldBlock.test(clicked)) {
                 ci.cancel();
-                handler.sendContentUpdates();
+                handler.sendAllDataToRemote();
             }
             return;
         }
 
         // 4) Number-key swap from hotbar into a container slot.
-        if (action == SlotActionType.SWAP && slot >= 0 && slot < containerSize) {
-            int hotbar = packet.button();
+        if (action == ContainerInput.SWAP && slot >= 0 && slot < containerSize) {
+            int hotbar = packet.buttonNum();
             if (hotbar >= 0 && hotbar < 9) {
-                ItemStack hotbarStack = player.getInventory().getStack(hotbar);
+                ItemStack hotbarStack = player.getInventory().getItem(hotbar);
                 if (shouldBlock.test(hotbarStack)) {
                     ci.cancel();
-                    handler.sendContentUpdates();
+                    handler.sendAllDataToRemote();
                 }
             }
         }
     }
 
-    @Inject(method = "onCreativeInventoryAction", at = @At("HEAD"), cancellable = true)
-    private void chestsort$preventBlacklistedEntryCreative(CreativeInventoryActionC2SPacket packet, CallbackInfo ci) {
+    @Inject(method = "handleSetCreativeModeSlot", at = @At("HEAD"), cancellable = true)
+    private void chestsort$preventBlacklistedEntryCreative(ServerboundSetCreativeModeSlotPacket packet, CallbackInfo ci) {
         if (player == null) return;
-        if (!(player.getEntityWorld() instanceof ServerWorld world)) return;
+        if (!(player.level() instanceof ServerLevel world)) return;
         if (packet == null) return;
 
         ChestSortState state = ChestSortState.get(world.getServer());
-        String uuid = player.getUuidAsString();
+        String uuid = player.getStringUUID();
         String mode = state.getBlacklistMode(uuid);
         if (!ChestSortState.blacklistModePreventsEntry(mode)) return;
 
         // Only applies to generic containers (chests/barrels/shulkers).
-        if (!(player.currentScreenHandler instanceof GenericContainerScreenHandler handler)) return;
+        if (!(player.containerMenu instanceof ChestMenu handler)) return;
 
-        int containerSize = handler.getInventory().size();
-        int slot = packet.slot();
+        int containerSize = handler.getContainer().getContainerSize();
+        int slot = packet.slotNum();
         if (slot < 0 || slot >= containerSize) return;
 
-        ItemStack stack = packet.stack();
+        ItemStack stack = packet.itemStack();
         if (stack == null || stack.isEmpty()) return;
 
-        String itemId = String.valueOf(Registries.ITEM.getId(stack.getItem()));
+String itemId = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
         if (!state.isItemBlacklisted(uuid, itemId)) return;
 
         boolean strict = ChestSortState.BLACKLIST_MODE_STRICT_PREVENT_ENTRY.equals(mode);
         if (!strict && chestsort$isWhitelistedInOpenContainer(state, uuid, stack, itemId)) return;
 
         ci.cancel();
-        handler.sendContentUpdates();
+        handler.sendAllDataToRemote();
     }
 
     private static boolean chestsort$isWhitelistedInOpenContainer(ChestSortState state, String playerUuid, ItemStack stack, String itemId) {

@@ -7,8 +7,9 @@
     "ClientPlayerInteractionManagerMixin",
     "HandledScreenMixin",
     "MinecraftClientMixin",
-    "WorldRendererMixin",
-    "ScreenInvoker"
+    "LevelRendererMixin",
+    "ScreenInvoker",
+    "AbstractContainerScreenAccessor"
   ],
   "injectors": {
     "defaultRequire": 1

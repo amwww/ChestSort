@@ -1,6 +1,6 @@
 package dev.dromer.chestsort.client;
 
-import net.minecraft.util.math.BlockPos;
+import net.minecraft.core.BlockPos;
 
 public final class ClientWandSelectionState {
     private ClientWandSelectionState() {
@@ -51,11 +51,11 @@ public final class ClientWandSelectionState {
     }
 
     public static BlockPos pos1() {
-        return hasPos1 ? BlockPos.fromLong(pos1Long) : null;
+        return hasPos1 ? BlockPos.of(pos1Long) : null;
     }
 
     public static BlockPos pos2() {
-        return hasPos2 ? BlockPos.fromLong(pos2Long) : null;
+        return hasPos2 ? BlockPos.of(pos2Long) : null;
     }
 
     public static long blockCount() {

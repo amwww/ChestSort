@@ -1,22 +1,22 @@
 package dev.dromer.chestsort.net.payload;
 
 import dev.dromer.chestsort.Chestsort;
-import net.minecraft.network.RegistryByteBuf;
-import net.minecraft.network.codec.PacketCodec;
-import net.minecraft.network.packet.CustomPayload;
-import net.minecraft.util.Identifier;
+import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.network.codec.StreamCodec;
+import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
+import net.minecraft.resources.Identifier;
 
 /** Client -> server: toggle whether a player inventory slot is protected from sorting. */
-public record ToggleLockedSlotPayload(int playerInventoryIndex) implements CustomPayload {
-    public static final Id<ToggleLockedSlotPayload> ID = new Id<>(Identifier.of(Chestsort.MOD_ID, "toggle_locked_slot"));
+public record ToggleLockedSlotPayload(int playerInventoryIndex) implements CustomPacketPayload {
+    public static final CustomPacketPayload.Type<ToggleLockedSlotPayload> ID = new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath(Chestsort.MOD_ID, "toggle_locked_slot"));
 
-    public static final PacketCodec<RegistryByteBuf, ToggleLockedSlotPayload> CODEC = PacketCodec.ofStatic(
+    public static final StreamCodec<RegistryFriendlyByteBuf, ToggleLockedSlotPayload> CODEC = StreamCodec.of(
         (buf, payload) -> buf.writeVarInt(payload.playerInventoryIndex),
         buf -> new ToggleLockedSlotPayload(buf.readVarInt())
     );
 
     @Override
-    public Id<? extends CustomPayload> getId() {
+    public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {
         return ID;
     }
 }
