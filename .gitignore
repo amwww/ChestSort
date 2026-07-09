@@ -8,3 +8,5 @@
 !/build/libs/**
 
 /run/
+
+.claude
