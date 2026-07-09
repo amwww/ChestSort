@@ -34,7 +34,8 @@ public final class ClientAutosortState {
     }
 
     private static String key(String dimId, long posLong) {
-        return (dimId == null ? "" : dimId) + "|" + posLong;
+        // Scope by world/server so two unrelated worlds sharing block coordinates don't collide.
+        return ClientWorldId.current() + "|" + (dimId == null ? "" : dimId) + "|" + posLong;
     }
 
     public static boolean isEnabled(String dimId, long posLong) {

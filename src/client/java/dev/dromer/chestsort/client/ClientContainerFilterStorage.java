@@ -54,7 +54,8 @@ public final class ClientContainerFilterStorage {
 
     private static String key(String dimId, long posLong) {
         String d = dimId == null ? "" : dimId;
-        return d + "|" + posLong;
+        // Scope by world/server so two unrelated worlds sharing block coordinates don't collide.
+        return ClientWorldId.current() + "|" + d + "|" + posLong;
     }
 
     public static void load() {
