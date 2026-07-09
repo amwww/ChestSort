@@ -1,0 +1,1 @@
+cs2|preset/wood|ladder,trapped_chest,chest,#fences,#fence_gates,#wooden_tool_materials,#wooden_trapdoors,#wooden_stairs,#wooden_slabs,#wooden_shelves,#wooden_pressure_plates,#wooden_fences,#wooden_doors,#wooden_buttons,#planks,#log

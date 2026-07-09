@@ -1,0 +1,1 @@
+cs2|preset/ores|lapis_block,redstone_block,emerald_block,diamond_block,gold_block,#copper,#redstone_ores,#lapis_ores,#iron_ores,#gold_ores,#emerald_ores,#diamond_ores,#coal_ores,#copper_ores,#trim_materials
