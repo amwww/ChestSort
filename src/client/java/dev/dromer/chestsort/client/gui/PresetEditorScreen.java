@@ -314,17 +314,31 @@ public final class PresetEditorScreen extends Screen {
 
                 List<String> allTags = this.chestsort$allItemTagIds;
                 if (allTags != null && !allTags.isEmpty()) {
-                    String q = norm.toLowerCase(java.util.Locale.ROOT);
-                    for (String t : allTags) {
-                        if (t == null) continue;
-                        String tl = t.toLowerCase(java.util.Locale.ROOT);
-                        if (!tl.contains(q)) continue;
-                        if (t.equals(norm)) continue;
-                        if (hasTag(t)) continue;
-                        items.add(null);
-                        tagIds.add(t);
-                        subtitles.add(t);
-                        if (items.size() >= 200) break;
+                    String[] qParts = splitTagId(norm);
+                    if (qParts != null) {
+                        String qNs = qParts[0].toLowerCase(java.util.Locale.ROOT);
+                        String qPath = qParts[1].toLowerCase(java.util.Locale.ROOT);
+                        boolean namespaceAgnostic = qNs.isEmpty() || "minecraft".equals(qNs) || "c".equals(qNs);
+                        String qMatch = namespaceAgnostic ? qPath : (qNs + ":" + qPath);
+
+                        for (String t : allTags) {
+                            if (t == null) continue;
+                            String[] tParts = splitTagId(t);
+                            if (tParts == null) continue;
+                            String tNs = tParts[0].toLowerCase(java.util.Locale.ROOT);
+                            String tPath = tParts[1].toLowerCase(java.util.Locale.ROOT);
+
+                            boolean matches = namespaceAgnostic
+                                ? (!qMatch.isEmpty() && tPath.contains(qMatch))
+                                : (tNs + ":" + tPath).contains(qMatch);
+                            if (!matches) continue;
+                            if (t.equals(norm)) continue;
+                            if (hasTag(t)) continue;
+                            items.add(null);
+                            tagIds.add(t);
+                            subtitles.add(t);
+                            if (items.size() >= 200) break;
+                        }
                     }
                 }
 
@@ -394,17 +408,31 @@ public final class PresetEditorScreen extends Screen {
             // If we have a cached tag list, provide substring suggestions.
             List<String> allTags = this.chestsort$allItemTagIds;
             if (allTags != null && !allTags.isEmpty()) {
-                String q = norm.toLowerCase(java.util.Locale.ROOT);
-                for (String t : allTags) {
-                    if (t == null) continue;
-                    String tl = t.toLowerCase(java.util.Locale.ROOT);
-                    if (!tl.contains(q)) continue;
-                    if (t.equals(norm)) continue;
-                    if (hasTag(t)) continue;
-                    items.add(null);
-                    tagIds.add(t);
-                    subtitles.add(t);
-                    if (items.size() >= 200) break;
+                String[] qParts = splitTagId(norm);
+                if (qParts != null) {
+                    String qNs = qParts[0].toLowerCase(java.util.Locale.ROOT);
+                    String qPath = qParts[1].toLowerCase(java.util.Locale.ROOT);
+                    boolean namespaceAgnostic = qNs.isEmpty() || "minecraft".equals(qNs) || "c".equals(qNs);
+                    String qMatch = namespaceAgnostic ? qPath : (qNs + ":" + qPath);
+
+                    for (String t : allTags) {
+                        if (t == null) continue;
+                        String[] tParts = splitTagId(t);
+                        if (tParts == null) continue;
+                        String tNs = tParts[0].toLowerCase(java.util.Locale.ROOT);
+                        String tPath = tParts[1].toLowerCase(java.util.Locale.ROOT);
+
+                        boolean matches = namespaceAgnostic
+                            ? (!qMatch.isEmpty() && tPath.contains(qMatch))
+                            : (tNs + ":" + tPath).contains(qMatch);
+                        if (!matches) continue;
+                        if (t.equals(norm)) continue;
+                        if (hasTag(t)) continue;
+                        items.add(null);
+                        tagIds.add(t);
+                        subtitles.add(t);
+                        if (items.size() >= 200) break;
+                    }
                 }
             }
 
@@ -1055,6 +1083,18 @@ public final class PresetEditorScreen extends Screen {
         if (t.isEmpty()) return null;
         if (t.startsWith("#")) t = t.substring(1);
         return Identifier.tryParse(t);
+    }
+
+    /** Splits a "#namespace:path" (or "#path") tag id into [namespace, path]. */
+    private static String[] splitTagId(String tagIdRaw) {
+        if (tagIdRaw == null) return null;
+        String t = tagIdRaw.trim();
+        if (t.isEmpty()) return null;
+        if (t.startsWith("#")) t = t.substring(1);
+        if (t.isEmpty()) return null;
+        int colon = t.indexOf(':');
+        if (colon < 0) return new String[] { "", t };
+        return new String[] { t.substring(0, colon), t.substring(colon + 1) };
     }
 
     private static String chestsort$formatTagDisplayName(String tagId) {
